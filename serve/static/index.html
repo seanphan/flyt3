@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect Four vs. a Fruit Fly Brain</title>
+<style>
+  :root{ --bg:#08080a; --panel:#111115; --line:#25252d; --ink:#e9e9ee; --dim:#8b8b98;
+         --accent:#ff7a18; --blue:#4aa8ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+         padding:15px 22px;border-bottom:1px solid var(--line)}
+  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  h1 b{color:var(--accent)}
+  .sub{color:var(--dim);font-size:12.5px}
+  .wrap{display:grid;grid-template-columns:minmax(380px,1.2fr) minmax(340px,.9fr);
+        gap:18px;padding:18px 22px;align-items:start;max-width:1500px}
+  @media(max-width:1000px){.wrap{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .panel h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+            margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-weight:600}
+  .stagewrap{position:relative;background:#0b0b10;padding:18px}
+  #board{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;max-width:520px;margin:0 auto}
+  .colbtn{background:none;border:none;padding:0;cursor:pointer;border-radius:10px}
+  .colbtn:hover:not(:disabled){background:#1b1b22}
+  .cell{width:100%;aspect-ratio:1;border-radius:50%;background:#1c1c24;
+        border:1px solid #2a2a34;transition:background .25s,box-shadow .25s}
+  .cell.fly{background:var(--accent);border-color:#ff9b52;box-shadow:0 0 14px #ff7a1870}
+  .cell.you{background:var(--blue);border-color:#7cc0ff;box-shadow:0 0 14px #4aa8ff70}
+  #status{padding:11px 14px;display:flex;align-items:center;gap:9px;font-size:13px;
+          border-top:1px solid var(--line);min-height:44px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none;transition:background .2s}
+  .dot.live{background:var(--accent);animation:pulse .9s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:11px 14px;border-top:1px solid var(--line)}
+  button{background:#1d1d24;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+         padding:6px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background .14s,border-color .14s}
+  button:hover{border-color:#3d3d4a;background:#25252e}
+  button.p{background:var(--accent);border-color:var(--accent);color:#150a02;font-weight:650}
+  select{background:#1d1d24;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+         padding:6px 9px;font:inherit;font-size:12.5px}
+  #gl{width:100%;display:block;background:#040406;height:170px;cursor:crosshair}
+  .legend{padding:8px 14px;display:flex;gap:16px;font-size:10.5px;color:#9a9aa8;flex-wrap:wrap}
+  .legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
+  .stat{padding:9px 12px;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:none}
+  .stat b{display:block;font-size:15px;font-variant-numeric:tabular-nums;font-weight:600}
+  .stat span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+  .cands{padding:10px 14px;min-height:120px}
+  .cand{display:flex;align-items:center;gap:9px;padding:3px 0;font-size:12.5px}
+  .cand .n{width:52px;font-weight:600;font-variant-numeric:tabular-nums}
+  .cand .track{flex:1;height:5px;background:#1e1e26;border-radius:3px;overflow:hidden}
+  .cand .fill{height:100%;background:var(--accent);opacity:.45;border-radius:3px;transition:width .35s ease}
+  .cand.chosen .fill{opacity:1}
+  .cand.chosen .n{color:var(--accent)}
+  .cand .v{width:44px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums}
+  #topn{padding:4px 14px 12px;font-size:11.5px;color:var(--dim);line-height:1.7}
+  #topn b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+  #history{padding:10px 14px;max-height:88px;overflow:auto;font-size:12.5px;
+           font-variant-numeric:tabular-nums;color:var(--dim);line-height:1.85}
+  #history b{color:var(--ink);font-weight:600}
+  #note{padding:10px 14px;border-top:1px solid var(--line);color:var(--dim);font-size:11.5px}
+  .vend{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+        gap:16px;z-index:50;background:radial-gradient(60% 60% at 50% 45%,#05050ad9,#05050af2);backdrop-filter:blur(4px)}
+  .vend.show{display:flex}
+  .vend p{font-size:26px;font-weight:700;margin:0;letter-spacing:-.02em}
+  .vend p.fly{color:var(--accent)} .vend p.you{color:var(--blue)}
+  footer{padding:6px 22px 30px;color:var(--dim);font-size:11.5px;max-width:1500px}
+  footer a{color:#9a9aa8}
+  #score{font-size:12px;color:var(--dim)} #score b{color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Connect Four vs. a <b>Fruit Fly Brain</b></h1>
+  <span class="sub" id="hdr">loading connectome…</span>
+  <span id="score" style="margin-left:auto">you <b id="sw">0</b> · fly <b id="sf">0</b> · draw <b id="sd">0</b></span>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>The fly is playing you</h2>
+    <div class="stagewrap"><div id="board"></div></div>
+    <div id="status"><span class="dot"></span><span id="msg">Loading…</span></div>
+    <div class="bar">
+      <button class="p" id="new">New game</button>
+      <select id="side">
+        <option value="white">You play first (cyan)</option>
+        <option value="black">Fly plays first</option>
+      </select>
+      <button id="undo">Undo</button>
+      <span class="sub" id="hist-title" style="margin-left:auto">moves</span>
+    </div>
+    <div id="history">—</div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Male CNS connectome · live activity</h2>
+      <canvas id="gl"></canvas>
+      <div class="legend">
+        <div><i style="background:#4aa8ff"></i>own pieces → R1–R6 patches</div>
+        <div><i style="background:#ffc24a"></i>your pieces → R8 patches</div>
+        <div><i style="background:#ff5a4a"></i>descending + motor out</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="s1">—</b><span>spikes</span></div>
+        <div class="stat"><b id="s2">—</b><span>motor spikes</span></div>
+        <div class="stat"><b id="s3">—</b><span>sim ms</span></div>
+        <div class="stat"><b id="s4">—</b><span>ticks</span></div>
+      </div>
+      <div class="cands" id="cands"></div>
+      <div id="topn"></div>
+      <div id="note">166,700 neurons · 25.6M fixed synapses · only the motor readout was trained.</div>
+    </div>
+  </div>
+</div>
+
+<div class="vend" id="vend">
+  <p id="vendmsg"></p>
+  <button class="p" id="again">Play again</button>
+</div>
+
+<footer>
+  Connectome: male <i>Drosophila melanogaster</i> CNS v1.0, HHMI Janelia + Google Research, CC-BY
+  (166,700 neurons, 25.6M directed connections retained). The wiring is never modified and nothing
+  about Connect-4 is stored in it. Your board drives photoreceptor patches (own pieces → R1–R6,
+  your pieces → R8); the fly's move is a trained linear readout of descending + motor-neuron spikes,
+  reinforced by self-play on a GPU (k3s-w6) — loss signals an aversive PPL101 dopamine pulse.
+  Method after <a href="https://github.com/nftechie/doomfly">nftechie/doomfly</a>.
+  <span id="traininfo"></span>
+</footer>
+
+<script>
+const NCOLS=7, NROWS=6;
+let G={id:null,cells:[],over:false,fly_to_move:false,busy:false,hist:[]};
+let score=JSON.parse(localStorage.getItem('flyc4-score')||'{"w":0,"f":0,"d":0}');
+
+const boardEl=document.getElementById('board');
+function drawBoard(){
+  boardEl.innerHTML='';
+  for(let c=0;c<NCOLS;c++){
+    const col=document.createElement('button'); col.className='colbtn';
+    col.disabled=G.busy||G.over;
+    col.onclick=()=>humanMove(c);
+    for(let r=NROWS-1;r>=0;r--){
+      const d=document.createElement('div');
+      d.className='cell'+(G.cells[r*NCOLS+c]==='fly'?' fly':G.cells[r*NCOLS+c]==='you'?' you':'');
+      col.appendChild(d);
+    }
+    boardEl.appendChild(col);
+  }
+}
+function setMsg(t,live){document.getElementById('msg').textContent=t;
+  document.querySelector('.dot').className='dot'+(live?' live':'');}
+function drawScore(){sw.textContent=score.w; sf.textContent=score.f; sd.textContent=score.d;}
+function saveScore(){localStorage.setItem('flyc4-score',JSON.stringify(score));drawScore();}
+
+function drawFly(f){
+  document.getElementById('s1').textContent=Math.round(f.spikes).toLocaleString();
+  document.getElementById('s2').textContent=Math.round(f.motor_spikes).toLocaleString();
+  document.getElementById('s3').textContent=f.sim_ms;
+  document.getElementById('s4').textContent=f.spikes_per_step.length;
+  sparkline(f.spikes_per_step);
+  const cands=document.getElementById('cands'); cands.innerHTML='';
+  f.probs.forEach((p,i)=>{
+    const d=document.createElement('div'); d.className='cand'+(i===f.col?' chosen':'');
+    d.innerHTML=`<span class="n">col ${i}</span><span class="track">
+      <span class="fill" style="width:${Math.round(p*100)}%"></span></span>
+      <span class="v">${(p*100).toFixed(1)}%</span>`;
+    cands.appendChild(d);
+  });
+  document.getElementById('topn').innerHTML='busiest motor neurons: '+
+    f.top_neurons.map(n=>`<b>${n.type}</b> ${(n.rate*100).toFixed(1)}%`).join(' · ');
+  raster(f.raster);
+}
+let spark, rast;
+function sparkline(xs){
+  const cv=document.getElementById('gl'), ctx=cv.getContext('2d');
+  cv.width=cv.clientWidth*devicePixelRatio; cv.height=170*devicePixelRatio;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const max=Math.max(...xs,1), n=xs.length;
+  ctx.strokeStyle='#ff7a18'; ctx.lineWidth=2*devicePixelRatio; ctx.beginPath();
+  xs.forEach((x,i)=>{
+    const px=(i/(n-1))*(cv.width-20)+10, py=cv.height-8-(x/max)*(cv.height-24);
+    i?ctx.lineTo(px,py):ctx.moveTo(px,py);
+  });
+  ctx.stroke();
+  ctx.fillStyle='#8b8b98'; ctx.font=`${10*devicePixelRatio}px sans-serif`;
+  ctx.fillText('spikes / tick',10,14*devicePixelRatio);
+}
+function raster(rows){
+  const cv=document.getElementById('gl'), ctx=cv.getContext('2d');
+  const H=170*devicePixelRatio, W=cv.width;
+  rows.forEach((row,i)=>{
+    row.forEach((v,j)=>{
+      if(v){ ctx.fillStyle='#ff5a4a'; ctx.fillRect(j/(row.length||1)*W, i/(rows.length||1)*H, 2, 2); }
+    });
+  });
+}
+
+async function newGame(side){
+  G.busy=true; setMsg('starting connectome…',true); drawBoard();
+  const r=await fetch('/api/game',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({human_side:side||document.getElementById('side').value})}).then(r=>r.json());
+  G={...r,busy:false,hist:[]}; document.getElementById('vend').classList.remove('show');
+  updateHist(); render(r);
+}
+function render(r){
+  G.cells=r.cells; G.over=r.over; G.fly_to_move=r.fly_to_move;
+  drawBoard();
+  if(r.fly) drawFly(r.fly);
+  if(r.result===1){ endMsg('the fly wins','fly'); score.f++; }
+  else if(r.result===-1){ endMsg('you win','you'); score.w++; }
+  else if(r.result===0){ endMsg('draw',''); score.d++; }
+  else if(G.over){ endMsg('draw',''); }
+  else setMsg(G.fly_to_move?'the fly is thinking…':'your move — click a column',G.fly_to_move);
+  saveScore();
+}
+function endMsg(t,cls){document.getElementById('vendmsg').textContent=t;
+  const v=document.getElementById('vend'); v.classList.remove('show'); void v.offsetWidth;
+  document.getElementById('vendmsg').className=cls; v.classList.add('show');
+  setMsg(t+' — play again?');}
+async function humanMove(c){
+  if(G.busy||G.over||G.fly_to_move) return;
+  G.busy=true; setMsg('dropping…'); drawBoard();
+  try{
+    const r=await fetch('/api/move',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({game_id:G.id,col:c})}).then(r=>r.json());
+    if(r.detail){setMsg(r.detail); G.busy=false; drawBoard(); return;}
+    G.hist.push(c); updateHist(); render(r);
+  } finally { G.busy=false; if(!G.over&&!G.fly_to_move) setMsg('your move — click a column'); }
+}
+function updateHist(){
+  const names=['0','1','2','3','4','5','6'];
+  document.getElementById('history').innerHTML=G.hist.length
+    ? G.hist.map((c,i)=>`${i%2?'<b>fly</b>':'you'} ${names[c]}`).join(' · ')
+    : '—';
+}
+document.getElementById('new').onclick=()=>newGame();
+document.getElementById('again').onclick=()=>newGame();
+document.getElementById('undo').onclick=async()=>{
+  if(!G.id||G.busy) return;
+  const r=await fetch('/api/undo',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({game_id:G.id})}).then(r=>r.json());
+  if(!r.detail){ G.hist=G.hist.slice(0,-1); updateHist(); render(r); }
+};
+drawScore(); drawBoard();
+fetch('/healthz').then(r=>r.json()).then(h=>{
+  document.getElementById('hdr').textContent=
+    `${h.device.toUpperCase()} · fixed wiring, trained readout`;
+  newGame();
+}).catch(()=>setMsg('server unreachable'));
+fetch('/report.json').then(r=>r.json()).then(rep=>{
+  document.getElementById('traininfo').textContent=
+    ` Trained ${rep.games.toLocaleString()} self-play games on ${rep.gpu}.`;
+}).catch(()=>{});
+</script>
+</body>
+</html>

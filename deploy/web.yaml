@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fly-web
+  namespace: flyc4
+  labels:
+    app: flyc4
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: flyc4, tier: web }
+  template:
+    metadata:
+      labels: { app: flyc4, tier: web }
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k3s-w6   # shares the PVC (RWO) with the training node
+      containers:
+        - name: web
+          image: flyc4:latest
+          imagePullPolicy: Never
+          command: ["uvicorn", "serve.app:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - { containerPort: 8000, name: http }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: 12Gi
+              cpu: "4"
+          volumeMounts:
+            - { name: out, mountPath: /out }
+            - { name: library, mountPath: /library, readOnly: true }
+      volumes:
+        - name: out
+          persistentVolumeClaim:
+            claimName: flyc4-out
+        - name: library
+          hostPath:
+            path: /library
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fly-web
+  namespace: flyc4
+spec:
+  type: NodePort
+  selector: { app: flyc4, tier: web }
+  ports:
+    - port: 80
+      targetPort: 8000
+      nodePort: 30180
