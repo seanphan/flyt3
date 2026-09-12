@@ -150,6 +150,7 @@ def main():
         s = torch.load(ckpt, map_location=args.device, weights_only=False)
         pol.load_state_dict(s["pol"]); snap.load_state_dict(s["snap"])
         opt.load_state_dict(s["opt"])
+        opt.param_groups[0]["lr"] = args.lr  # CLI lr wins over the checkpointed one
         start_batch, m_off = s["batch"] + 1, s.get("metrics_lines", 0)
         print(json.dumps({"evt": "resumed", "batch": start_batch}), flush=True)
 

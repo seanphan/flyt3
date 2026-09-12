@@ -22,7 +22,7 @@ spec:
           image: flyc4:latest
           imagePullPolicy: Never
           command: ["python", "-m", "flyc4.train",
-                    "--batches", "200", "--games", "768",
+                    "--batches", "100", "--games", "768", "--steps", "64", "--lr", "8e-3",
                     "--out", "/out", "--resume"]
           resources:
             limits:
