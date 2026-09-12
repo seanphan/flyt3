@@ -1,53 +1,37 @@
-"""Opponents and batched evaluation: random and depth-2 minimax."""
+"""Opponents and batched evaluation: random and perfect (full-minimax)."""
 from __future__ import annotations
 
 import torch
 
-from .env import NCOLS, NROWS, apply, init, legal_mask
+from .env import LINES, NCELLS, apply, init, legal_mask
 from .policy import Readout
 
-COL_W = (3., 2., 1., 0., 1., 2., 3.)
 
+def mm_move(mine: int, opp: int) -> int:
+    """Perfect tic-tac-toe move for one position (depth-aware negamax)."""
+    lines = [int(l) for l in LINES.tolist()]
 
-def mm_move(mine: int, opp: int, hts: list[int], depth: int = 2) -> int:
-    """Negamax column choice for one game (python, eval-time only)."""
+    def won(m: int) -> bool:
+        return any(m & l == l for l in lines)
 
-    def drop(m: int, h: list[int], c: int):
-        bit = 1 << (c * 7 + h[c])
-        m2 = m | bit
-        won = any(m2 & (m2 >> s) & (m2 >> (2 * s)) & (m2 >> (3 * s)) for s in (1, 7, 6, 8))
-        return m2, won
-
-    def score(m: int) -> float:
-        return sum(COL_W[c] for c in range(NCOLS) for r in range(NROWS) if m >> (c * 7 + r) & 1)
-
-    def negmax(m: int, o: int, h: list[int], d: int) -> float:
-        legal = [c for c in range(NCOLS) if h[c] < NROWS]
-        if not legal:
-            return 0.0
-        best = -1e9
-        for c in legal:
-            m2, won = drop(m, h, c)
-            if won:
-                return 1000.0
-            if d == 0:
-                v = score(m2) - score(o)
-            else:
-                h2 = h[:]
-                h2[c] += 1
-                v = -negmax(o, m2, h2, d - 1)
-            best = max(best, v)
+    def negamax(m: int, o: int, free: list[int], depth: int) -> int:
+        if won(o):
+            return -10 + depth      # opponent won with their last move
+        if not free:
+            return 0                # draw
+        best = -100
+        for c in free:
+            v = -negamax(o, m | (1 << c), [f for f in free if f != c], depth - 1)
+            if v > best:
+                best = v
         return best
 
-    legal = [c for c in range(NCOLS) if hts[c] < NROWS]
-    best_c, best_v = legal[0], -1e18
+    legal = [c for c in range(NCELLS) if not (mine | opp) >> c & 1]
+    best_c, best_v = legal[0], -1000
     for c in legal:
-        m2, won = drop(mine, hts, c)
-        if won:
+        if won(mine | (1 << c)):
             return c
-        h2 = hts[:]
-        h2[c] += 1
-        v = -negmax(opp, m2, h2, depth - 1)
+        v = -negamax(opp, mine | (1 << c), [f for f in legal if f != c], 9)
         if v > best_v:
             best_c, best_v = c, v
     return best_c
@@ -56,7 +40,7 @@ def mm_move(mine: int, opp: int, hts: list[int], depth: int = 2) -> int:
 @torch.no_grad()
 def evaluate(sim, pol: Readout, opponent: str, n_games: int, steps: int, device,
              tau: float = 0.1) -> dict:
-    """Batched games; fly acts near-greedily; opponent 'random' or 'minimax2'."""
+    """Batched games; fly acts near-greedily; opponent 'random' or 'perfect'."""
     st = init(n_games, device)
     agent_is = torch.rand(n_games, device=device) < 0.5  # fly is side 0 in half
     z = torch.zeros(n_games, device=device)
@@ -82,8 +66,7 @@ def evaluate(sim, pol: Readout, opponent: str, n_games: int, steps: int, device,
                 cols = torch.multinomial(probs, 1).squeeze(1)
             else:
                 cols = torch.tensor(
-                    [mm_move(int(st["mine"][g]), int(st["opp"][g]),
-                             st["hts"][g].tolist(), depth=2) for g in idx.tolist()],
+                    [mm_move(int(st["mine"][g]), int(st["opp"][g])) for g in idx.tolist()],
                     dtype=torch.int64, device=device)
             apply(st, cols, idx)
             fin = idx[st["done"][idx]]

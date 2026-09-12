@@ -1,4 +1,4 @@
-"""MaleCNS v1.0 import -> CSR graph + task interface for FLYC4.
+"""MaleCNS v1.0 import -> CSR graph + task interface for FLYC4 (tic-tac-toe).
 
 Data: male Drosophila melanogaster CNS v1.0 (HHMI Janelia + Google Research,
 CC-BY), flat-connectome feathers. Node/edge policy follows nftechie/doomfly
@@ -21,6 +21,7 @@ F_ANN = "body-annotations-male-cns-v1.0-minconf-0.5.feather"
 F_NT = "body-neurotransmitters-male-cns-v1.0.feather"
 F_EDGES = "connectome-weights-male-cns-v1.0-minconf-0.5.feather"
 
+N_CELLS = 9           # tic-tac-toe cells
 N_SENS_PER_CELL = 6   # R1-R6 photoreceptors per board cell (own channel)
 N_R8_PER_CELL = 5     # R8 cells per board cell (opponent channel)
 N_MOTOR = 1024        # 512 descending + 512 VNC motor neurons
@@ -37,7 +38,6 @@ def _exact_ids(values: np.ndarray) -> np.ndarray:
 
 
 def build(cache_dir: Path = CACHE, data_dir: Path = DATA) -> dict:
-    import pandas as pd
     import pyarrow.feather as feather
 
     cache_dir = Path(cache_dir)
@@ -87,13 +87,13 @@ def build(cache_dir: Path = CACHE, data_dir: Path = DATA) -> dict:
     # own channel: patches of R1-R6 spread across the whole retina
     r_all = nodes.index[(nodes.superclass == "ol_sensory") & (nodes.type == "R1-R6")]
     r_ids = nodes.bodyId.to_numpy()[r_all]
-    own_pick = np.linspace(0, len(r_ids) - 1, 42 * N_SENS_PER_CELL).astype(int)
+    own_pick = np.linspace(0, len(r_ids) - 1, N_CELLS * N_SENS_PER_CELL).astype(int)
     own_sens = np.searchsorted(ids, _exact_ids(r_ids[own_pick])).astype(np.int64)
     # opponent channel: R8 patches (color channel, cf. doomfly brightness/color split)
     r8_all = nodes.index[(nodes.superclass == "ol_sensory")
                          & nodes.type.astype(str).str.startswith("R8")]
     r8_ids = nodes.bodyId.to_numpy()[r8_all]
-    opp_pick = np.linspace(0, len(r8_ids) - 1, 42 * N_R8_PER_CELL).astype(int)
+    opp_pick = np.linspace(0, len(r8_ids) - 1, N_CELLS * N_R8_PER_CELL).astype(int)
     opp_sens = np.searchsorted(ids, _exact_ids(r8_ids[opp_pick])).astype(np.int64)
     sensory_idx = np.concatenate([own_sens, opp_sens])
 
@@ -140,8 +140,8 @@ def build(cache_dir: Path = CACHE, data_dir: Path = DATA) -> dict:
         "ppl_idx": ppl_idx.tolist(),
         "source_files": {"annotations": F_ANN, "nt": F_NT, "edges": F_EDGES},
         "interface": {
-            "sensory": "own pieces -> 6-cell R1-R6 retinal patches (42x6); "
-                       "opponent pieces -> 5-cell R8 patches (42x5)",
+            "sensory": "own pieces -> 6-cell R1-R6 retinal patches (9x6); "
+                       "opponent pieces -> 5-cell R8 patches (9x5)",
             "motor": "top 512 descending + top 512 VNC motor neurons by outgoing synapses",
             "dopamine": "PPL101 pair, aversive pulse on loss",
             "signs": "GABA edges negative; all other synapses positive",

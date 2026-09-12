@@ -1,12 +1,15 @@
 """FLYC4 play server: Connect-4 against the simulated male fly connectome.
 
 Same simulation + trained linear readout as training; one fly decision runs
-the fixed wiring for 96 ticks on GPU and returns the sampled column plus
-neural telemetry for the spectator UI. Sessions live in process memory.
+the fixed wiring for 96 ticks and returns the sampled column plus neural
+telemetry for the spectator UI. Sessions live in process memory; endpoints
+are sync on purpose so FastAPI runs the GPU work in its worker threadpool
+instead of blocking the event loop.
 """
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -22,7 +25,8 @@ from flyc4.env import apply, init, legal_mask
 from flyc4.policy import Readout
 from flyc4.sim import FlySim
 
-OUT = Path("/out")
+OUT = Path(os.environ.get("FLYC4_OUT", "/out"))
+STATIC_DIR = Path(os.environ.get("FLYC4_STATIC", "/app/serve/static"))
 STEPS = 96
 TAU = 0.35
 
@@ -31,12 +35,8 @@ state: dict = {}
 
 
 def board_cells(bm: int) -> list[bool]:
-    cells = [False] * 42
-    for k in range(42):
-        c, r = k // 6, k % 6
-        if bm >> (c * 7 + r) & 1:
-            cells[k] = True
-    return cells
+    """bitboard int -> 9-cell occupancy, cell = r*3 + c."""
+    return [bool(bm >> k & 1) for k in range(9)]
 
 
 def to_ui(g: dict) -> dict:
@@ -45,8 +45,8 @@ def to_ui(g: dict) -> dict:
     mover_is_fly = ply_even == g["agent_is"]
     own = board_cells(int(st["mine"]))    # side to move
     other = board_cells(int(st["opp"]))
-    cells = [0] * 42
-    for k in range(42):
+    cells = [0] * 9
+    for k in range(9):
         if own[k]:
             cells[k] = "fly" if mover_is_fly else "human"
         elif other[k]:
@@ -71,7 +71,7 @@ def fly_result(g: dict):
 
 @app.on_event("startup")
 def startup():
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = os.environ.get("FLYC4_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
     meta = load_graph()
     state["meta"] = meta
     state["sim"] = FlySim(meta, dev)
@@ -91,7 +91,7 @@ def startup():
 def new_game(human_side: str) -> dict:
     st = init(1, state["dev"])
     g = {
-        "id": uuid.uuid4().hex[:12], "st": st,
+        "id": uuid.uuid4().hex[:12], "st": st, "created": time.time(),
         "agent_is": human_side == "black",  # fly is side 0; side 0 moves on even plies
         "history": [],
     }
@@ -99,34 +99,14 @@ def new_game(human_side: str) -> dict:
     return g
 
 
-@app.post("/api/game")
-def api_game(body: dict):
-    g = new_game(body.get("human_side", "white"))
-    resp = to_ui(g)
-    if (int(g["st"]["ply"]) % 2 == 0) == g["agent_is"]:
-        resp.update(fly_move(g))
-    return resp
-
-
-@app.post("/api/move")
-def api_move(body: dict):
-    g = state["sessions"].get(body.get("game_id"))
-    if g is None:
-        raise HTTPException(404, "unknown game")
-    st = g["st"]
-    col = int(body.get("col", -1))
-    mover_is_fly = (int(st["ply"]) % 2 == 0) == g["agent_is"]
-    if mover_is_fly:
-        raise HTTPException(409, "not your turn")
-    if st["done"] or col < 0 or col > 6 or not bool(legal_mask(st)[0, col]):
-        raise HTTPException(409, "illegal move")
-    g["history"].append(col)
-    apply(st, torch.tensor([col], device=state["dev"]))
-    resp = to_ui(g)
-    if not st["done"]:
-        resp.update(fly_move(g))
-    resp["result"] = fly_result(g)
-    return resp
+def get_game(game_id):
+    """Session lookup; a null/stale id falls back to the newest game."""
+    if game_id and game_id in state["sessions"]:
+        return state["sessions"][game_id]
+    if state["sessions"]:
+        return max(state["sessions"].values(),
+                   key=lambda g: g["created"])
+    return None
 
 
 def fly_move(g) -> dict:
@@ -137,14 +117,12 @@ def fly_move(g) -> dict:
     rates = out["dn_rates"].t()
     legal = legal_mask(st)
     probs = torch.softmax(pol.masked_logits(rates, legal) / TAU, dim=-1)[0]
-    cols = torch.multinomial(probs, 1).squeeze(1)
-    col = int(cols)
+    col_t = torch.multinomial(probs, 1)
+    col = int(col_t)
     g["history"].append(col)
-    apply(st, cols.to(st["mine"].device))
-    if state["dev"] == "cuda":
-        torch.cuda.synchronize()
+    apply(st, col_t.to(st["mine"].device))
     top_idx = torch.topk(out["dn_rates"][:, 0], k=8).indices.tolist()
-    raster = (out["motor_raster"][:, :48] > 0).to(torch.uint8).cpu()  # first 48 ticks
+    raster = (out["motor_raster"][:, :48] > 0).to(torch.uint8).cpu()
     return {
         "fly": {
             "col": col,
@@ -162,13 +140,43 @@ def fly_move(g) -> dict:
     }
 
 
+@app.post("/api/game")
+def api_game(body: dict):
+    g = new_game(body.get("human_side", "white"))
+    resp = to_ui(g)
+    if (int(g["st"]["ply"]) % 2 == 0) == g["agent_is"]:
+        resp.update(fly_move(g))
+    return resp
+
+
+@app.post("/api/move")
+def api_move(body: dict):
+    g = get_game(body.get("game_id"))
+    if g is None:
+        raise HTTPException(404, "unknown game")
+    st = g["st"]
+    col = int(body.get("col", -1))
+    mover_is_fly = (int(st["ply"]) % 2 == 0) == g["agent_is"]
+    if mover_is_fly:
+        raise HTTPException(409, "not your turn")
+    if st["done"] or col < 0 or col > 8 or not bool(legal_mask(st)[0, col]):
+        raise HTTPException(409, "illegal move")
+    g["history"].append(col)
+    apply(st, torch.tensor([col], device=state["dev"]))
+    resp = to_ui(g)
+    if not st["done"]:
+        resp.update(fly_move(g))
+    resp["result"] = fly_result(g)
+    return resp
+
+
 @app.post("/api/undo")
 def api_undo(body: dict):
-    """Rebuild the session without the last human+fly ply pair."""
-    g = state["sessions"].get(body.get("game_id"))
+    """Rebuild the session without the last ply."""
+    g = get_game(body.get("game_id"))
     if g is None or len(g["history"]) < 1:
         raise HTTPException(409, "nothing to undo")
-    hist = g["history"][:-1]  # drop the trailing ply
+    hist = g["history"][:-1]
     human_side = "white" if not g["agent_is"] else "black"
     g2 = new_game(human_side)
     st = g2["st"]
@@ -186,7 +194,7 @@ def api_undo(body: dict):
 
 @app.get("/api/state/{game_id}")
 def api_state(game_id: str):
-    g = state["sessions"].get(game_id)
+    g = get_game(game_id)
     if g is None:
         raise HTTPException(404, "unknown game")
     resp = to_ui(g)
@@ -215,4 +223,4 @@ def report():
     raise HTTPException(404)
 
 
-app.mount("/", StaticFiles(directory="/app/serve/static", html=True), name="static")
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

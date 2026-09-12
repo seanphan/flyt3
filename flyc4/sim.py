@@ -6,7 +6,7 @@ consensus neurotransmitter predictions); state is a leaky integrate-and-fire
 membrane per neuron under per-neuron homeostatic threshold control, which
 keeps responses graded and prevents runaway recruitment. Board cells drive
 retinal patches: own pieces -> 6-cell R1-R6 patches, opponent pieces ->
-5-cell R8 patches. The wiring is never modified; nothing about Connect-4
+5-cell R8 patches. The wiring is never modified; nothing about tic-tac-toe
 is stored in it.
 """
 from __future__ import annotations
@@ -14,10 +14,10 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .env import bits_to_cells
+from .env import NCELLS, bits_to_cells
 
-N_OWN = 42 * 6    # own-piece channel: R1-R6 patches
-N_OPP = 42 * 5    # opponent channel: R8 patches
+N_OWN = NCELLS * 6   # own-piece channel: R1-R6 patches
+N_OPP = NCELLS * 5   # opponent channel: R8 patches
 
 
 class FlySim:
@@ -36,8 +36,8 @@ class FlySim:
         theta = gain * torch.sqrt(torch.from_numpy(z["theta_scale"].astype(np.float32)) + 1.0)
         self.theta = theta.to(device)
         sidx = z["sensory_idx"]
-        self.own_rows = torch.from_numpy(sidx[:N_OWN].astype(np.int64)).view(42, 6).to(device)
-        self.opp_rows = torch.from_numpy(sidx[N_OWN:].astype(np.int64)).view(42, 5).to(device)
+        self.own_rows = torch.from_numpy(sidx[:N_OWN].astype(np.int64)).view(NCELLS, 6).to(device)
+        self.opp_rows = torch.from_numpy(sidx[N_OWN:].astype(np.int64)).view(NCELLS, 5).to(device)
         self.motor = torch.from_numpy(z["motor_idx"]).to(device)
         self.ppl = torch.from_numpy(z["ppl_idx"]).to(device)
         self.decay, self.noise, self.dtype = decay, noise, dtype
@@ -49,7 +49,7 @@ class FlySim:
         d = torch.zeros(self.N, batch, device=self.device, dtype=self.dtype)
         if batch == 0:
             return d
-        cells_own = bits_to_cells(mine)      # [B, 42] bool
+        cells_own = bits_to_cells(mine)      # [B, 9] bool
         cells_opp = bits_to_cells(opp)
         d[self.own_rows] += (own_drive / self.own_rows.shape[1]) \
             * cells_own.t().to(self.dtype).unsqueeze(1)
