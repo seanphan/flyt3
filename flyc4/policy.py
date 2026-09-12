@@ -16,14 +16,13 @@ class Readout(nn.Module):
         self.nmoves = nmoves
         self.head = nn.Linear(n_motor, nmoves)   # motor rates -> move logits
         self.value = nn.Linear(n_motor, 1)
-        nn.init.zeros_(self.head.weight)
+        self.scale = 20.0   # raw spike rates are small; give logits room to separate
         nn.init.zeros_(self.head.bias)
         nn.init.normal_(self.value.weight, std=1e-3)
 
     def masked_logits(self, rates: torch.Tensor, legal: torch.Tensor) -> torch.Tensor:
-        return self.head(rates).masked_fill(~legal, float("-inf"))
+        return (self.head(rates * self.scale)).masked_fill(~legal, float("-inf"))
 
-    @torch.no_grad()
     def act(self, rates: torch.Tensor, legal: torch.Tensor, tau: float = 1.0):
         probs = F.softmax(self.masked_logits(rates, legal) / tau, dim=-1)
         cols = torch.multinomial(probs, 1).squeeze(1)
