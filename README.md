@@ -1,7 +1,7 @@
 # FLYC4 — Connect Four vs. a Fruit Fly Brain
 
 A simulated *Drosophila melanogaster* CNS (MaleCNS v1.0, 166,700 neurons /
-25.6M retained connections) plays Connect-4. The wiring is never modified;
+25.6M retained connections) plays tic-tac-toe. The wiring is never modified;
 the only trained component is a linear readout of descending + VNC motor
 neuron spike rates, learned with self-play REINFORCE on a k3s GPU worker.
 A web app lets a human play against the trained fly brain, with live
@@ -19,7 +19,7 @@ readout.
 | Path | Contents |
 | --- | --- |
 | `flyc4/connectome.py` | MaleCNS v1.0 feather import -> CSR graph + task interface |
-| `flyc4/env.py` | batched Connect-4 (int64 bitboards, 7 bits/column) |
+| `flyc4/env.py` | batched tic-tac-toe (int64 bitboards, 9 cells) |
 | `flyc4/sim.py` | batched GPU LIF simulation (signed GABA synapses, homeostatic thresholds) |
 | `flyc4/policy.py` | the trained linear readout + value baseline |
 | `flyc4/train.py` | self-play REINFORCE loop (Job entrypoint) |
@@ -30,12 +30,12 @@ readout.
 
 ## Task interface (deterministic, documented)
 
-- **Sensory in**: own pieces drive 6-cell R1-R6 photoreceptor patches (42x6);
-  opponent pieces drive 5-cell R8 patches (42x5). R cells are spread evenly
+- **Sensory in**: own pieces drive 6-cell R1-R6 photoreceptor patches (9x6);
+  opponent pieces drive 5-cell R8 patches (9x5). R cells are spread evenly
   across the retina (sorted-bodyId linspace). Position -> current, not spikes.
 - **Motor out**: top 512 descending neurons + top 512 VNC motor neurons by
   outgoing synapses. Spike counts over a 96-tick decision window -> linear
-  head -> masked softmax over the 7 columns.
+  head -> masked softmax over the 9 cells.
 - **Dopamine**: terminal losses schedule an aversive current into the PPL101
   pair (doomfly-style). The gradient itself is REINFORCE + value baseline +
   entropy bonus.
