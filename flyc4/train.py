@@ -109,6 +109,7 @@ def play_batch(sim, pol, snap, B, steps, tau, device):
 def update(pol, opt, batch, ent_coef, vf_coef=0.5):
     z = batch["z"]
     adv = (z - batch["v_last"]).detach()
+    adv = (adv - adv.mean()) / (adv.std() + 1e-6)
     n = float(z.numel())
     loss_pi = -(adv * batch["sum_logp"]).sum() / n
     loss_v = ((batch["v_last"] - z) ** 2).mean()

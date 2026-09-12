@@ -13,8 +13,14 @@ spec:
     metadata:
       labels: { app: flyc4, tier: web }
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: k3s-w5   # same node as training (RWO PVC attach)
+      # hardware-label selection per the platform rule; lands on any free 3090
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - { key: hardware, operator: In, values: [rtx3090-x1] }
+                  - { key: nvidia.com/gpu.present, operator: In, values: ["true"] }
       containers:
         - name: web
           image: flyc4:latest

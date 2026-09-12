@@ -14,9 +14,16 @@ spec:
       labels:
         app: flyc4
     spec:
-      # user-directed placement: k3s-w5 (RTX 3090, devpod lane)
-      nodeSelector:
-        kubernetes.io/hostname: k3s-w5
+      # user-directed placement on k3s-w6; selection follows the platform rule
+      # (hardware capability labels + gpu.present, never device-plugin overrides)
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - { key: kubernetes.io/hostname, operator: In, values: [k3s-w6] }
+                  - { key: hardware, operator: In, values: [rtx3090-x1] }
+                  - { key: nvidia.com/gpu.present, operator: In, values: ["true"] }
       containers:
         - name: train
           image: flyc4:latest
