@@ -143,9 +143,13 @@ def fly_move(g) -> dict:
 @app.post("/api/game")
 def api_game(body: dict):
     g = new_game(body.get("human_side", "white"))
-    resp = to_ui(g)
     if (int(g["st"]["ply"]) % 2 == 0) == g["agent_is"]:
-        resp.update(fly_move(g))
+        fly = fly_move(g)["fly"]
+    else:
+        fly = None
+    resp = to_ui(g)
+    if fly:
+        resp["fly"] = fly
     return resp
 
 
@@ -163,12 +167,12 @@ def api_move(body: dict):
         raise HTTPException(409, "illegal move")
     g["history"].append(col)
     apply(st, torch.tensor([col], device=state["dev"]))
-    resp = to_ui(g)
     if not st["done"]:
-        resp.update(fly_move(g))
+        resp = {"fly": fly_move(g)["fly"], **to_ui(g)}
+    else:
+        resp = to_ui(g)
     resp["result"] = fly_result(g)
     return resp
-
 
 @app.post("/api/undo")
 def api_undo(body: dict):
@@ -185,9 +189,13 @@ def api_undo(body: dict):
             break
         apply(st, torch.tensor([col], device=state["dev"]))
         g2["history"].append(col)
-    resp = to_ui(g2)
     if (int(st["ply"]) % 2 == 0) == g2["agent_is"] and not st["done"]:
-        resp.update(fly_move(g2))
+        fly = fly_move(g2)["fly"]
+    else:
+        fly = None
+    resp = to_ui(g2)
+    if fly:
+        resp["fly"] = fly
     resp["result"] = fly_result(g2)
     return resp
 
