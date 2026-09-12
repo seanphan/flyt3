@@ -14,7 +14,7 @@ spec:
       labels: { app: flyc4, tier: web }
     spec:
       nodeSelector:
-        kubernetes.io/hostname: k3s-w6   # shares the PVC (RWO) with the training node
+        kubernetes.io/hostname: k3s-w5   # shares the PVC (RWO) with the training node
       containers:
         - name: web
           image: flyc4:latest

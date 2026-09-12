@@ -89,7 +89,13 @@ def play_batch(sim, pol, snap, B, steps, tau, device):
             apply(st, cols, idx)
             fin = idx[st["done"][idx]]
             if fin.numel():
-                z[fin] = -(st["res"][fin] == 1).to(torch.float32)
+                zf = -(st["res"][fin] == 1).to(torch.float32)
+                z[fin] = zf
+                lost = fin[zf < 0]
+                if lost.numel():
+                    n_pulses += int(lost.numel())
+                    d = sim.drive_from_board(st["mine"][lost], st["opp"][lost], int(lost.numel()))
+                    sim.punish(d)  # aversive PPL101 pulse on every fly loss
     gid = torch.cat(gid)
     logps = torch.cat(logps)
     ents = torch.cat(ents)
