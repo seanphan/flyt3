@@ -31,19 +31,15 @@ spec:
           command: ["python", "-m", "flyc4.train",
                     "--batches", "1177", "--games", "1024", "--steps", "48", "--lr", "3e-2",
                     "--eval-every", "25", "--save-every", "10",
-                    "--out", "/out", "--resume"]
+                    "--out", "/library/datasets/flyc4/live", "--resume"]
           resources:
             limits:
               nvidia.com/gpu: "1"
               memory: 14Gi
               cpu: "5"
           volumeMounts:
-            - { name: out, mountPath: /out }
-            - { name: library, mountPath: /library, readOnly: true }
+            - { name: library, mountPath: /library }
       volumes:
-        - name: out
-          persistentVolumeClaim:
-            claimName: flyc4-out
         - name: library
           hostPath:
             path: /library
