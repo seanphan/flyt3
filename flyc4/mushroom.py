@@ -291,7 +291,7 @@ class MushroomQ:
 
     def state_dict_np(self) -> dict:
         return {"w": self.w.cpu().numpy(), "w0": self.w0.cpu().numpy(),
-                "readout": self.readout.cpu().numpy(), "group": self.mbon_group.cpu().numpy(),
+                "readout": self.readout.cpu().numpy(), "group": self.region.cpu().numpy(),
                 "pn_u": self.pn_u.cpu().numpy(), "pn_action_mask": self.pn_action_mask.cpu().numpy(),
                 "pn_theta": self.pn_theta.cpu().numpy(), "pn_scale": self.pn_scale.cpu().numpy(),
                 "feat_mean": self.feat_mean.cpu().numpy(), "feat_scale": self.feat_scale.cpu().numpy(),
