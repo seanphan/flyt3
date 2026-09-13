@@ -62,7 +62,7 @@ class MBSelfPlay:
             pick = int(np.random.randint(0, len(legal(cells))))
         else:
             pick = int(torch.argmax(vals))
-        return legal(cells)[pick], kc[pick], float(vals[pick])
+        return legal(cells)[pick], kc[pick].cpu().numpy(), float(vals[pick])
 
     def play_game(self):
         cells = [0]*9
