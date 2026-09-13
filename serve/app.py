@@ -451,4 +451,15 @@ def report():
     raise HTTPException(404)
 
 
+@app.middleware("http")
+async def no_store_html(request, call_next):
+    """HTML and API responses must never come from a stale browser cache:
+    after every deploy the endpoints move, and a cached page is a broken page."""
+    response = await call_next(request)
+    p = request.url.path
+    if p == "/" or p == "/index.html" or p.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
