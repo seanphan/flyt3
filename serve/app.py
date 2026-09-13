@@ -1,10 +1,10 @@
-"""FLYC4 play server: Connect-4 against the simulated male fly connectome.
+"""FLYC4 play server: tic-tac-toe against the simulated male fly connectome.
 
 Same simulation + trained linear readout as training; one fly decision runs
 the fixed wiring for 96 ticks and returns the sampled column plus neural
-telemetry for the spectator UI. Sessions live in process memory; endpoints
-are sync on purpose so FastAPI runs the GPU work in its worker threadpool
-instead of blocking the event loop.
+telemetry (including per-neuron spike counts for the 3D connectome view).
+Players get Google-Sheets-style animal names and a persisted leaderboard.
+Endpoints are sync so FastAPI runs the GPU work in its worker threadpool.
 """
 from __future__ import annotations
 
@@ -29,6 +29,14 @@ OUT = Path(os.environ.get("FLYC4_OUT", "/out"))
 STATIC_DIR = Path(os.environ.get("FLYC4_STATIC", "/app/serve/static"))
 STEPS = 96
 TAU = 0.35
+LB_PATH = OUT / "leaderboard.json"
+
+ADJECTIVES = ["Swift", "Clever", "Bold", "Curious", "Fierce", "Gentle", "Lucky", "Mighty",
+              "Nimble", "Quiet", "Sly", "Tenacious", "Valiant", "Wily", "Zesty", "Cosmic",
+              "Golden", "Rapid", "Solar", "Lunar", "Brisk", "Shrewd"]
+ANIMALS = ["Pangolin", "Axolotl", "Falcon", "Okapi", "Tapir", "Ibex", "Lynx", "Marmot",
+           "Narwhal", "Ocelot", "Puffin", "Quokka", "Saola", "Tarsier", "Uakari", "Vervet",
+           "Wombat", "Yak", "Zebra", "Iguana", "Gecko", "Heron", "Koala", "Lemur", "Orca"]
 
 app = FastAPI(title="FLYC4")
 state: dict = {}
@@ -69,6 +77,76 @@ def fly_result(g: dict):
     return 1 if (mover_won == mover_is_fly) else -1
 
 
+def maybe_reload_readout():
+    """Hot-swap the readout when the training job refreshes readout.npz."""
+    path = OUT / "readout.npz"
+    if not path.exists():
+        return
+    mtime = path.stat().st_mtime
+    if state.get("readout_mtime") == mtime:
+        return
+    dev = state["dev"]
+    z = np.load(path)
+    pol = Readout(state["sim"].motor.numel()).to(dev)
+    pol.head.weight.data = torch.from_numpy(z["Wp"]).to(dev)
+    pol.head.bias.data = torch.from_numpy(z["head_bias"]).to(dev)
+    pol.value.weight.data = torch.from_numpy(z["value_weight"]).to(dev)
+    pol.value.bias.data = torch.from_numpy(z["value_bias"]).to(dev)
+    pol.eval()
+    state["pol"] = pol
+    state["readout_mtime"] = mtime
+    state["readout_loaded_at"] = time.time()
+
+
+def build_brain_sample(meta: dict, n_optic=1300, n_central=1300, n_vnc=800) -> dict:
+    """Stratified neuron sample with stylized 3D positions for the connectome view."""
+    z = meta["arrays"]
+    region = z["region"]
+    rng = np.random.default_rng(42)
+    picks = []
+    for code, n in ((0, n_optic), (1, n_central), (2, n_vnc)):
+        idxs = np.nonzero(region == code)[0]
+        take = min(n, len(idxs))
+        picks.extend(rng.choice(idxs, size=take, replace=False).tolist())
+    idx = np.array(sorted(picks), dtype=np.int64)
+    reg = region[idx]
+    pts = np.zeros((len(idx), 3), dtype=np.float32)
+    r = rng.random(len(idx))
+    for code, mask in ((0, reg == 0), (1, reg == 1), (2, reg == 2)):
+        k = int(mask.sum())
+        if k == 0:
+            continue
+        g = lambda s, sc: rng.normal(0, sc, k).astype(np.float32)  # noqa: E731
+        if code == 0:    # two optic lobes flanking the brain
+            pts[mask, 0] = np.where(r[mask] < 0.5, -1.0, 1.0) + g(0, 0.28)
+            pts[mask, 1] = 0.72 + g(0, 0.26)
+            pts[mask, 2] = g(0, 0.26)
+        elif code == 1:  # central brain sphere
+            pts[mask, 0] = g(0, 0.42)
+            pts[mask, 1] = 0.88 + g(0, 0.30)
+            pts[mask, 2] = g(0, 0.42)
+        else:            # ventral nerve cord below
+            pts[mask, 0] = g(0, 0.16)
+            pts[mask, 1] = -0.62 + g(0, 0.52)
+            pts[mask, 2] = g(0, 0.16)
+    return {"idx": idx, "points": pts, "region": reg}
+
+
+def load_leaderboard() -> dict:
+    if LB_PATH.exists():
+        try:
+            return json.loads(LB_PATH.read_text())
+        except Exception:
+            pass
+    return {"players": {}, "fly": {"w": 0, "l": 0, "d": 0}}
+
+
+def save_leaderboard(lb: dict):
+    tmp = LB_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(lb, indent=2) + "\n")
+    tmp.replace(LB_PATH)
+
+
 @app.on_event("startup")
 def startup():
     dev = os.environ.get("FLYC4_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,24 +154,29 @@ def startup():
     state["meta"] = meta
     state["sim"] = FlySim(meta, dev)
     state["dev"] = dev
+    state["brain"] = build_brain_sample(meta)
+    state["brain_idx_t"] = torch.from_numpy(state["brain"]["idx"]).to(dev)
     pol = Readout(state["sim"].motor.numel()).to(dev)
-    z = np.load(OUT / "readout.npz")
-    pol.head.weight.data = torch.from_numpy(z["Wp"]).to(dev)
-    pol.head.bias.data = torch.from_numpy(z["head_bias"]).to(dev)
-    pol.value.weight.data = torch.from_numpy(z["value_weight"]).to(dev)
-    pol.value.bias.data = torch.from_numpy(z["value_bias"]).to(dev)
+    if (OUT / "readout.npz").exists():
+        z = np.load(OUT / "readout.npz")
+        pol.head.weight.data = torch.from_numpy(z["Wp"]).to(dev)
+        pol.head.bias.data = torch.from_numpy(z["head_bias"]).to(dev)
+        pol.value.weight.data = torch.from_numpy(z["value_weight"]).to(dev)
+        pol.value.bias.data = torch.from_numpy(z["value_bias"]).to(dev)
     pol.eval()
     state["pol"] = pol
+    state["readout_mtime"] = (OUT / "readout.npz").stat().st_mtime if (OUT / "readout.npz").exists() else 0
     state["sessions"] = {}
     state["motor_types"] = meta["motor_types"]
+    state["lb"] = load_leaderboard()
 
 
-def new_game(human_side: str) -> dict:
+def new_game(human_side: str, player: str) -> dict:
     st = init(1, state["dev"])
     g = {
         "id": uuid.uuid4().hex[:12], "st": st, "created": time.time(),
         "agent_is": human_side == "black",  # fly is side 0; side 0 moves on even plies
-        "history": [],
+        "history": [], "player": player or "Anonymous",
     }
     state["sessions"][g["id"]] = g
     return g
@@ -104,8 +187,7 @@ def get_game(game_id):
     if game_id and game_id in state["sessions"]:
         return state["sessions"][game_id]
     if state["sessions"]:
-        return max(state["sessions"].values(),
-                   key=lambda g: g["created"])
+        return max(state["sessions"].values(), key=lambda g: g["created"])
     return None
 
 
@@ -113,7 +195,7 @@ def fly_move(g) -> dict:
     st, sim, pol = g["st"], state["sim"], state["pol"]
     t0 = time.time()
     drive = sim.drive_from_board(st["mine"], st["opp"], 1)
-    out = sim.run(drive, STEPS, want_raster=True)
+    out = sim.run(drive, STEPS, want_raster=True, count_idx=state["brain_idx_t"])
     rates = out["dn_rates"].t()
     legal = legal_mask(st)
     probs = torch.softmax(pol.masked_logits(rates, legal) / TAU, dim=-1)[0]
@@ -122,6 +204,14 @@ def fly_move(g) -> dict:
     g["history"].append(col)
     apply(st, col_t.to(st["mine"].device))
     top_idx = torch.topk(out["dn_rates"][:, 0], k=8).indices.tolist()
+    counts = out["counts"][:, 0]                     # per sampled-neuron spike counts
+    act = torch.nonzero(counts > 0).squeeze(1)
+    k = min(140, act.numel())
+    if k:
+        tv, ti = torch.topk(counts[act], k)
+        active = [[int(act[i]), int(c)] for i, c in zip(ti.tolist(), tv.tolist())]
+    else:
+        active = []
     raster = (out["motor_raster"][:, :48] > 0).to(torch.uint8).cpu()
     return {
         "fly": {
@@ -136,13 +226,15 @@ def fly_move(g) -> dict:
                 for i in top_idx
             ],
             "raster": raster.tolist(),
+            "active": active,
         },
     }
 
 
 @app.post("/api/game")
 def api_game(body: dict):
-    g = new_game(body.get("human_side", "white"))
+    maybe_reload_readout()
+    g = new_game(body.get("human_side", "white"), body.get("player", ""))
     if (int(g["st"]["ply"]) % 2 == 0) == g["agent_is"]:
         fly = fly_move(g)["fly"]
     else:
@@ -165,6 +257,7 @@ def api_move(body: dict):
         raise HTTPException(409, "not your turn")
     if st["done"] or col < 0 or col > 8 or not bool(legal_mask(st)[0, col]):
         raise HTTPException(409, "illegal move")
+    g["player"] = body.get("player") or g["player"]
     g["history"].append(col)
     apply(st, torch.tensor([col], device=state["dev"]))
     if not st["done"]:
@@ -174,6 +267,69 @@ def api_move(body: dict):
     resp["result"] = fly_result(g)
     return resp
 
+
+@app.post("/api/finish")
+def api_finish(body: dict):
+    """Record a finished game on the leaderboard. Result read from the session."""
+    g = get_game(body.get("game_id"))
+    if g is None:
+        raise HTTPException(404, "unknown game")
+    r = fly_result(g)
+    if r is None:
+        raise HTTPException(409, "game not finished")
+    name = (body.get("name") or g.get("player") or "Anonymous").strip()[:32] or "Anonymous"
+    lb = state["lb"]
+    p = lb["players"].setdefault(name, {"w": 0, "l": 0, "d": 0, "games": 0})
+    if r == -1:
+        p["w"] += 1; lb["fly"]["l"] += 1
+    elif r == 1:
+        p["l"] += 1; lb["fly"]["w"] += 1
+    else:
+        p["d"] += 1; lb["fly"]["d"] += 1
+    p["games"] += 1
+    p["last"] = time.strftime("%Y-%m-%d %H:%M")
+    save_leaderboard(lb)
+    return {"ok": True, "result": r, "player": name, "leaderboard": leaderboard_view()}
+
+
+def leaderboard_view():
+    lb = state["lb"]
+    rows = []
+    for name, p in lb["players"].items():
+        wr = (p["w"] / p["games"] * 100) if p["games"] else 0.0
+        rows.append({"name": name, "w": p["w"], "l": p["l"], "d": p["d"],
+                     "games": p["games"], "win_rate": round(wr, 1), "last": p.get("last", "")})
+    rows.sort(key=lambda r: (r["w"], r["win_rate"]), reverse=True)
+    fly = lb["fly"]
+    return {"players": rows[:20], "fly": fly,
+            "fly_games": fly["w"] + fly["l"] + fly["d"]}
+
+
+@app.get("/api/leaderboard")
+def api_leaderboard():
+    return leaderboard_view()
+
+
+@app.get("/api/animal")
+def api_animal():
+    """Google-Sheets-style anonymous animal name, unused ones preferred."""
+    lb = state["lb"]
+    for _ in range(8):
+        name = f"{np.random.choice(ADJECTIVES)} {np.random.choice(ANIMALS)}"
+        if name not in lb["players"]:
+            return {"name": name}
+    return {"name": f"{np.random.choice(ANIMALS)} {np.random.randint(2, 99)}"}
+
+
+@app.get("/api/brain")
+def api_brain():
+    b = state["brain"]
+    return JSONResponse({
+        "points": [[round(float(x), 3), round(float(y), 3), round(float(zz), 3), int(rr)]
+                   for (x, y, zz), rr in zip(b["points"], b["region"])],
+    })
+
+
 @app.post("/api/undo")
 def api_undo(body: dict):
     """Rebuild the session without the last ply."""
@@ -182,7 +338,7 @@ def api_undo(body: dict):
         raise HTTPException(409, "nothing to undo")
     hist = g["history"][:-1]
     human_side = "white" if not g["agent_is"] else "black"
-    g2 = new_game(human_side)
+    g2 = new_game(human_side, g["player"])
     st = g2["st"]
     for col in hist:
         if st["done"] or not bool(legal_mask(st)[0, int(col)]):

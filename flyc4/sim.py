@@ -58,9 +58,12 @@ class FlySim:
         return d
 
     @torch.no_grad()
-    def run(self, drive: torch.Tensor, steps: int, want_raster: bool = False):
+    def run(self, drive: torch.Tensor, steps: int, want_raster: bool = False,
+            count_idx: torch.Tensor | None = None):
         """Simulate `steps` ticks for a [N, B] drive; returns decision signals."""
         batch = drive.shape[1]
+        counts = (torch.zeros(count_idx.numel(), batch, device=self.device, dtype=self.dtype)
+                  if count_idx is not None else None)
         v = torch.rand(self.N, batch, device=self.device, dtype=self.dtype) * 0.05
         s_prev = torch.zeros(self.N, batch, device=self.device, dtype=self.dtype)
         dn_counts = torch.zeros(self.motor.numel(), batch, device=self.device, dtype=self.dtype)
@@ -77,6 +80,8 @@ class FlySim:
             rate = 0.97 * rate + 0.03 * s.mean(1, keepdim=True)
             s_prev = s
             dn_counts += s[self.motor]
+            if counts is not None:
+                counts += s[count_idx]
             total_spikes[t] = s.sum()
             if want_raster:
                 raster[:, t] = s[self.motor].sum(1)
@@ -84,6 +89,7 @@ class FlySim:
             "dn_rates": dn_counts / steps,
             "total_spikes": total_spikes,
             "motor_raster": raster,
+            "counts": counts,
         }
 
     @torch.no_grad()

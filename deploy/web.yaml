@@ -26,6 +26,8 @@ spec:
           image: flyc4:latest
           imagePullPolicy: Never
           command: ["uvicorn", "serve.app:app", "--host", "0.0.0.0", "--port", "8000"]
+          env:
+            - { name: FLYC4_DEVICE, value: cpu }
           ports:
             - { containerPort: 8000, name: http }
           readinessProbe:
@@ -34,9 +36,8 @@ spec:
             periodSeconds: 10
           resources:
             limits:
-              nvidia.com/gpu: "1"
-              memory: 12Gi
-              cpu: "4"
+              memory: 8Gi
+              cpu: "3"
           volumeMounts:
             - { name: out, mountPath: /out }
             - { name: library, mountPath: /library, readOnly: true }

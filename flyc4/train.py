@@ -113,6 +113,14 @@ def update(pol, opt, batch, ent_coef, vf_coef=0.5):
             "ent": float(-loss_ent.detach()), "mean_abs_adv": float(adv.abs().mean())}
 
 
+def export_readout(pol, path, meta):
+    W = pol.head.weight.detach().cpu().numpy().astype(np.float32)
+    np.savez(path, Wp=W, head_bias=pol.head.bias.detach().cpu().numpy(),
+             value_weight=pol.value.weight.detach().cpu().numpy(),
+             value_bias=pol.value.bias.detach().cpu().numpy(),
+             motor_types=np.array(meta["motor_types"]))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--batches", type=int, default=200)
@@ -176,13 +184,13 @@ def main():
         if (b + 1) % args.save_every == 0 or b == args.batches - 1:
             torch.save({"pol": pol.state_dict(), "opt": opt.state_dict(),
                         "batch": b, "metrics_lines": m_off}, ckpt)
+            export_readout(pol, args.out / "readout.npz", meta)  # web serves the latest brain live
+        if args.batches >= 4 and (b + 1) in (args.batches // 2, 3 * args.batches // 4):
+            opt.param_groups[0]["lr"] *= 0.5
+            print(json.dumps({"evt": "lr", "lr": opt.param_groups[0]["lr"]}), flush=True)
 
     # final export
-    W = pol.head.weight.detach().cpu().numpy().astype(np.float32)
-    np.savez(args.out / "readout.npz", Wp=W, head_bias=pol.head.bias.detach().cpu().numpy(),
-             value_weight=pol.value.weight.detach().cpu().numpy(),
-             value_bias=pol.value.bias.detach().cpu().numpy(),
-             motor_types=np.array(meta["motor_types"]))
+    export_readout(pol, args.out / "readout.npz", meta)
     total_games = (args.batches - start_batch) * args.games
     report = {
         "algorithm": "symmetric self-play REINFORCE + value baseline + entropy bonus on a "

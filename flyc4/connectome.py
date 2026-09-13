@@ -115,6 +115,14 @@ def build(cache_dir: Path = CACHE, data_dir: Path = DATA) -> dict:
         + [str(t) if t is not None else "" for t in nodes.type.to_numpy()[vm][vm_rank]]
     )
 
+    sup = nodes.superclass.astype(str).fillna("")
+    region = np.select(
+        [sup.str.startswith("ol_") | sup.str.startswith("visual_"),
+         sup.str.startswith("cb_") | sup.isin(
+             ["ascending_neuron", "sensory_ascending", "ENS", "descending_neuron",
+              "cb_endocrine", "cb_motor"])],
+        [0, 1], default=2).astype(np.uint8)   # 0 optic, 1 central, 2 VNC
+
     ppl = nodes.index[nodes.type == "PPL101"]
     ppl_idx = np.searchsorted(ids, _exact_ids(nodes.bodyId.to_numpy()[ppl])).astype(np.int64)
 
@@ -124,6 +132,7 @@ def build(cache_dir: Path = CACHE, data_dir: Path = DATA) -> dict:
         indices=j.astype(np.int32),
         values=val.astype(np.float32),
         theta_scale=indeg.astype(np.float32),
+        region=region,
         sensory_idx=sensory_idx,
         motor_idx=motor_idx,
         ppl_idx=ppl_idx,
