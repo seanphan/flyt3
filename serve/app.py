@@ -203,10 +203,11 @@ def new_game(human_side: str, player: str) -> dict:
 
 
 def get_game(game_id):
-    """Session lookup; a null/stale id falls back to the newest game."""
+    """Session lookup. A provided-but-unknown id is a hard 404, never another
+    player's session; only a missing id falls back to the newest game."""
     if game_id and game_id in state["sessions"]:
         return state["sessions"][game_id]
-    if state["sessions"]:
+    if not game_id and state["sessions"]:
         return max(state["sessions"].values(), key=lambda g: g["created"])
     return None
 
@@ -313,6 +314,9 @@ def api_finish(body: dict):
     r = fly_result(g)
     if r is None:
         raise HTTPException(409, "game not finished")
+    if g.get("recorded"):
+        return {"ok": True, "result": r, "player": g.get("recorded_name", ""),
+                "leaderboard": leaderboard_view(), "already": True}
     name = (body.get("name") or g.get("player") or "Anonymous").strip()[:32] or "Anonymous"
     lb = state["lb"]
     p = lb["players"].setdefault(name, {"w": 0, "l": 0, "d": 0, "games": 0})
@@ -325,6 +329,8 @@ def api_finish(body: dict):
     p["games"] += 1
     p["last"] = time.strftime("%Y-%m-%d %H:%M")
     save_leaderboard(lb)
+    g["recorded"] = True
+    g["recorded_name"] = name
     return {"ok": True, "result": r, "player": name, "leaderboard": leaderboard_view()}
 
 
@@ -388,7 +394,11 @@ def api_brain():
 def api_undo(body: dict):
     """Rebuild the session without the last ply."""
     g = get_game(body.get("game_id"))
-    if g is None or len(g["history"]) < 1:
+    if g is None:
+        raise HTTPException(404, "unknown game")
+    if g.get("recorded"):
+        raise HTTPException(409, "result already saved")
+    if len(g["history"]) < 1:
         raise HTTPException(409, "nothing to undo")
     hist = g["history"][:-1]
     human_side = "white" if not g["agent_is"] else "black"

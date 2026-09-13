@@ -182,6 +182,55 @@ function buildBoard(){
     cellRings.push(ring);boardGroup.add(ring);
   }
   scene.add(boardGroup);
+  buildFlyFly();
+}
+
+/* the opponent made visible: a neon-glass fruit fly perched beside the board */
+let flyFly=null, dartLine=null, dartT=-1;
+function buildFlyFly(){
+  const g=new THREE.Group();
+  const glass=(c,e,ei)=>new THREE.MeshStandardMaterial({color:c,roughness:.25,metalness:.15,
+    emissive:new THREE.Color(e),emissiveIntensity:ei,transparent:true,opacity:.94});
+  const thorax=new THREE.Mesh(new THREE.SphereGeometry(0.16,16,14),glass(0x1a1210,0x351408,0.6));
+  thorax.scale.set(1,0.85,0.8);g.add(thorax);
+  const abdomen=new THREE.Mesh(new THREE.SphereGeometry(0.13,16,14),glass(0x140d0b,0x2a0f06,0.6));
+  abdomen.scale.set(2.1,0.75,0.7);abdomen.position.x=-0.36;g.add(abdomen);
+  const band=new THREE.Mesh(new THREE.TorusGeometry(0.1,0.014,8,24),glass(0x5ac8ff,0x5ac8ff,1.6));
+  band.rotation.y=Math.PI/2;band.position.x=-0.24;g.add(band);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.1,14,12),glass(0x18100e,0x2a0f06,0.6));
+  head.position.set(0.22,0.04,0);g.add(head);
+  const eye=new THREE.SphereGeometry(0.062,12,10);
+  const eyeMat=new THREE.MeshStandardMaterial({color:0x30080a,roughness:.15,
+    emissive:new THREE.Color(0xff2b1d),emissiveIntensity:1.9});
+  const e1=new THREE.Mesh(eye,eyeMat);e1.position.set(0.26,0.06,0.07);g.add(e1);
+  const e2=new THREE.Mesh(eye,eyeMat);e2.position.set(0.26,0.06,-0.07);g.add(e2);
+  const legGeo=new THREE.CylinderGeometry(0.012,0.008,0.34,6);
+  const legMat=new THREE.MeshStandardMaterial({color:0x0e0b09,roughness:.4,
+    emissive:new THREE.Color(0xff4a3d),emissiveIntensity:0.25});
+  for(const [sx,sz,tilt] of [[1,1,0.5],[1,-1,-0.5],[-1,1,0.35],[-1,-1,-0.35],[1,0,0],[-1,0,0.15]]){
+    const leg=new THREE.Mesh(legGeo,legMat);
+    leg.position.set(sx*0.1,-0.12,sz*0.13);
+    leg.rotation.z=sx*tilt; leg.rotation.x=sz*0.4;
+    g.add(leg);
+  }
+  const wingGeo=new THREE.PlaneGeometry(0.5,0.16);
+  const wingMat=new THREE.MeshStandardMaterial({color:0x9fb4c8,transparent:true,opacity:0.24,
+    side:THREE.DoubleSide,emissive:new THREE.Color(0x8fd4ff),emissiveIntensity:0.35,depthWrite:false});
+  const wings=[];
+  for(const s of [-1,1]){
+    const w=new THREE.Mesh(wingGeo,wingMat);
+    w.position.set(-0.05,0.16,s*0.1);
+    w.rotation.x=Math.PI/2;
+    g.add(w); wings.push(w);
+  }
+  g.position.set(2.7,0.62,-1.9);
+  g.rotation.y=-2.35;
+  scene.add(g);
+  flyFly={g,wings,base:g.position.y,wingT:Math.random()*10};
+
+  const dgeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
+  dartLine=new THREE.Line(dgeo,new THREE.LineBasicMaterial({color:0x5ac8ff,transparent:true,opacity:0}));
+  scene.add(dartLine);
 }
 
 /* pieces: crossed electrode-red bars / a cobalt ring, lying flat on the board */
@@ -256,7 +305,29 @@ function tickScene(){
     if(brainMat) brainMat.uniforms.uBoost.value=Math.min(0.5,0.02+waveData[i][2]*0.0006);
     if(waveT>waveData.length*3+60) waveT=-1;
   }
+  if(flyFly){
+    flyFly.wingT+=dt;
+    const excited=(G.fly_to_move||G.busy)&&!G.over;
+    const hz=excited?26:4;
+    const amp=excited?0.95:0.12;
+    for(let i=0;i<2;i++){
+      const w=flyFly.wings[i];
+      w.rotation.z=Math.PI/2 - Math.sin(flyFly.wingT*hz*Math.PI*2*(i?1:-1))*amp*(i?0.8:1);
+      w.rotation.y=(i?0.35:-0.35);
+    }
+    flyFly.g.position.y=flyFly.base+Math.sin(flyFly.wingT*4.2)*0.02;
+    flyFly.g.children.forEach(o=>{
+      if(o.material&&o.material.emissiveIntensity!==undefined&&o.material.emissive.getHex()!==0xff2b1d)
+        o.material.emissiveIntensity=(o.material.emissive.getHex()===0x5ac8ff?1.6:0.6)*(excited?1.35:1);
+    });
+  }
+  if(dartT>=0&&dartLine){
+    dartT+=dt;
+    dartLine.material.opacity=Math.max(0,0.9-dartT*1.6);
+    if(dartT>0.7){dartT=-1;dartLine.material.opacity=0;}
+  }
 }
+let dt=0.016;
 
 function updateCamera(){
   const hr=camDist*Math.sin(camPhi), y=camDist*Math.cos(camPhi);
@@ -268,6 +339,7 @@ function updateCamera(){
 /* ============================== init + input ============================== */
 window.addEventListener('DOMContentLoaded',()=>{
   const canvas=document.getElementById('scene');
+  if(new URLSearchParams(location.search).has('flat')){ start2D(); return; }
   try { renderer=new THREE.WebGLRenderer({canvas,antialias:true}); }
   catch(e){ renderer=null; start2D(); return; }
   if(!renderer.getContext()) { renderer=null; start2D(); return; }
@@ -374,10 +446,17 @@ function start2D(){
   requestAnimationFrame(loop2d);
 }
 const CELL2D=130;
+let board2dDirty=true, last2d=0;
+function mark2d(){board2dDirty=true;}
 function loop2d(t){
   requestAnimationFrame(loop2d);
-  if(!ctx2d) return;
+  if(!ctx2d||document.hidden) return;
+  if(!board2dDirty && t-last2d<50) return;
+  if(t-last2d<50) return;
+  last2d=t; board2dDirty=false;
   const w=cv2dWidth(),h=cv2dHeight();
+  if(ctx2d.canvas.width!==w) ctx2d.canvas.width=w;
+  if(ctx2d.canvas.height!==h) ctx2d.canvas.height=h;
   ctx2d.fillStyle='#06070a';ctx2d.fillRect(0,0,w,h);
   const ox=w/2-1.5*CELL2D, oy=h/2-1.5*CELL2D;
   ctx2d.lineWidth=5;ctx2d.strokeStyle='#2b3340';
@@ -386,18 +465,25 @@ function loop2d(t){
     ctx2d.beginPath();ctx2d.moveTo(x1,y1);ctx2d.lineTo(x2,y2);ctx2d.stroke();
   }
   for(let k=0;k<9;k++){
-    const c=k%3,r=(k/3)|0, x=ox+c*CELL2D, y=oy+r*CELL2D;
+    const c=k%3,r=(k/3)|0, x=ox+c*CELL2D, y=oy+r*CELL2D, cx=x+CELL2D/2, cy=y+CELL2D/2;
     if(G.cells[k]==='fly'){
-      ctx2d.strokeStyle='#5ac8ff';ctx2d.lineWidth=6;ctx2d.shadowColor='#5ac8ff';ctx2d.shadowBlur=18;
-      ctx2d.beginPath();ctx2d.arc(x+CELL2D/2,y+CELL2D/2,CELL2D*0.3,0,7);ctx2d.stroke();
+      ctx2d.lineWidth=14;ctx2d.strokeStyle='#5ac8ff33';
+      ctx2d.beginPath();ctx2d.arc(cx,cy,CELL2D*0.3,0,7);ctx2d.stroke();
+      ctx2d.lineWidth=5;ctx2d.strokeStyle='#5ac8ff';
+      ctx2d.beginPath();ctx2d.arc(cx,cy,CELL2D*0.3,0,7);ctx2d.stroke();
     } else if(G.cells[k]==='human'){
-      ctx2d.strokeStyle='#ff4a3d';ctx2d.lineWidth=6;ctx2d.shadowColor='#ff4a3d';ctx2d.shadowBlur=18;
+      ctx2d.lineWidth=14;ctx2d.strokeStyle='#ff4a3d33';ctx2d.lineCap='round';
+      ctx2d.beginPath();ctx2d.moveTo(x+18,y+18);ctx2d.lineTo(x+CELL2D-18,y+CELL2D-18);
+      ctx2d.moveTo(x+CELL2D-18,y+18);ctx2d.lineTo(x+18,y+CELL2D-18);ctx2d.stroke();
+      ctx2d.lineWidth=5;ctx2d.strokeStyle='#ff4a3d';
       ctx2d.beginPath();ctx2d.moveTo(x+18,y+18);ctx2d.lineTo(x+CELL2D-18,y+CELL2D-18);
       ctx2d.moveTo(x+CELL2D-18,y+18);ctx2d.lineTo(x+18,y+CELL2D-18);ctx2d.stroke();
     }
-    ctx2d.shadowBlur=0;
   }
+  board2dDirty=false;
 }
+const _origDrawBoard=drawBoard;
+drawBoard=function(){ if(ctx2d){ board2dDirty=true; return; } _origDrawBoard(); mark2d(); };
 function cv2dWidth(){return document.getElementById('scene').width}
 function cv2dHeight(){return document.getElementById('scene').height}
 function canPlay(){return !G.busy&&!G.over&&!G.fly_to_move&&hoverCell>=0&&G.cells[hoverCell]===0}
@@ -499,6 +585,12 @@ function drawFly(f){
   document.getElementById('topn').innerHTML='busiest motor neurons: '+
     f.top_neurons.slice(0,6).map(n=>`<b>${n.type}</b> ${(n.rate*100).toFixed(1)}%`).join(' · ');
   playWave(f);
+  if(dartLine&&flyFly){
+    const from=flyFly.g.position.clone().add(new THREE.Vector3(0.3,0.05,0));
+    const to=cellPos(f.col).clone().setY(0.18);
+    dartLine.geometry.setFromPoints([from,to]);
+    dartT=0;dartLine.material.opacity=0.9;
+  }
 }
 async function humanMove(k){
   if(G.busy||G.over||G.fly_to_move) return;
