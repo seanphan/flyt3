@@ -3,223 +3,392 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tic-Tac-Toe vs. a Fruit Fly Brain</title>
+<title>FLYT3 — Tic-Tac-Toe vs. a Fly Brain</title>
 <style>
-  :root{ --bg:#08080a; --panel:#111115; --line:#25252d; --ink:#e9e9ee; --dim:#8b8b98;
-         --accent:#ff7a18; --blue:#4aa8ff; }
+  :root{
+    --bg:#06070a; --line:#1c1f27; --ink:#e8eaf0; --dim:#828898;
+    --cobalt:#5ac8ff; --red:#ff4a3d;
+  }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-       font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+       font:14px/1.5 -apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;
        -webkit-font-smoothing:antialiased}
-  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
-         padding:15px 22px;border-bottom:1px solid var(--line)}
-  h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
-  h1 b{color:var(--accent)}
-  .sub{color:var(--dim);font-size:12.5px}
-  .wrap{display:grid;grid-template-columns:minmax(330px,.95fr) minmax(420px,1.35fr);
-        gap:16px;padding:16px 22px;align-items:start;max-width:1500px}
-  @media(max-width:1080px){.wrap{grid-template-columns:1fr}}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
-  .panel h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
-            margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-weight:600}
-  .stagewrap{position:relative;background:#0b0b10;padding:20px}
-  #board{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:330px;margin:0 auto}
-  .cellbtn{background:#14141b;border:1px solid #26262f;border-radius:12px;padding:0;
-           aspect-ratio:1;cursor:pointer;font-size:42px;font-weight:700;line-height:1;
-           color:transparent;transition:background .15s,border-color .15s,box-shadow .25s}
-  .cellbtn:hover:not(:disabled){background:#1c1c25;border-color:#34343f}
-  .cellbtn:disabled{cursor:default}
-  .cellbtn.fly{color:var(--accent);border-color:#ff9b52;box-shadow:0 0 18px #ff7a1840}
-  .cellbtn.you{color:var(--blue);border-color:#7cc0ff;box-shadow:0 0 18px #4aa8ff40}
-  #status{padding:11px 14px;display:flex;align-items:center;gap:9px;font-size:13px;
-          border-top:1px solid var(--line);min-height:44px}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none;transition:background .2s}
-  .dot.live{background:var(--accent);animation:pulse .9s ease-in-out infinite}
-  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
-  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:11px 14px;border-top:1px solid var(--line)}
-  button.act{background:#1d1d24;color:var(--ink);border:1px solid var(--line);border-radius:8px;
-         padding:6px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background .14s,border-color .14s}
-  button.act:hover{border-color:#3d3d4a;background:#25252e}
-  button.act.p{background:var(--accent);border-color:var(--accent);color:#150a02;font-weight:650}
-  select{background:#1d1d24;color:var(--ink);border:1px solid var(--line);border-radius:8px;
-         padding:6px 9px;font:inherit;font-size:12.5px}
-  #brain{width:100%;display:block;height:360px;background:#040406;cursor:grab}
-  #brain:active{cursor:grabbing}
-  .blegend{padding:8px 14px;display:flex;gap:14px;font-size:10.5px;color:#9a9aa8;flex-wrap:wrap}
-  .blegend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
-  .stat{padding:9px 12px;border-right:1px solid var(--line)}
-  .stat:last-child{border-right:none}
-  .stat b{display:block;font-size:15px;font-variant-numeric:tabular-nums;font-weight:600}
-  .stat span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
-  .cands{padding:8px 14px;min-height:106px}
-  .cand{display:flex;align-items:center;gap:9px;padding:2px 0;font-size:12px}
-  .cand .n{width:64px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dim)}
-  .cand .track{flex:1;height:5px;background:#1e1e26;border-radius:3px;overflow:hidden}
-  .cand .fill{height:100%;background:var(--accent);opacity:.4;border-radius:3px;transition:width .35s ease}
-  .cand.chosen .fill{opacity:1}
-  .cand.chosen .n{color:var(--accent)}
-  .cand .v{width:42px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums}
-  #topn{padding:2px 14px 10px;font-size:11px;color:var(--dim);line-height:1.7}
-  #topn b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
-  #history{padding:10px 14px;max-height:72px;overflow:auto;font-size:12.5px;
-           font-variant-numeric:tabular-nums;color:var(--dim);line-height:1.85}
-  #history b{color:var(--ink);font-weight:600}
-  #note{padding:10px 14px;border-top:1px solid var(--line);color:var(--dim);font-size:11.5px}
-  .vend{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
-        gap:14px;z-index:50;background:radial-gradient(60% 60% at 50% 45%,#05050ad9,#05050af2);backdrop-filter:blur(4px)}
-  .vend.show{display:flex}
-  .vend p{font-size:28px;font-weight:700;margin:0;letter-spacing:-.02em}
-  .vend p.fly{color:var(--accent)} .vend p.you{color:var(--blue)}
-  .vend .row{display:flex;gap:8px;align-items:center}
-  .vend input{background:#1d1d24;color:var(--ink);border:1px solid var(--line);border-radius:8px;
-              padding:9px 12px;font:inherit;font-size:13px;width:220px}
-  .vend button.act{font-size:14px;padding:10px 20px;border-radius:10px}
-  footer{padding:6px 22px 30px;color:var(--dim);font-size:11.5px;max-width:1500px}
-  footer a{color:#9a9aa8}
-  #score{font-size:12px;color:var(--dim);margin-left:auto} #score b{color:var(--ink)}
-  table.lb{width:100%;border-collapse:collapse;font-size:12.5px}
-  table.lb th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
-              text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
-  table.lb td{padding:7px 10px;border-bottom:1px solid #1a1a21;font-variant-numeric:tabular-nums}
-  table.lb td.name{font-weight:600}
-  table.lb tr.me td{background:#17171f}
-  table.lb td .wr{color:var(--ink);font-weight:600}
-  .lbwrap{max-height:260px;overflow:auto}
-  .youline{padding:9px 14px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line)}
-  .youline b{color:var(--ink)}
+  ::selection{background:#12314a;color:#dff1ff}
+  #scene{position:fixed;inset:0;display:block;cursor:grab}
+  #scene:active{cursor:grabbing}
+
+  .hud{position:fixed;z-index:10}
+  #wordmark{top:26px;left:30px;pointer-events:none}
+  #wordmark .t{font-family:"Big Shoulders Display","Arial Narrow",sans-serif;
+      font-size:42px;font-weight:700;color:var(--cobalt);
+      text-shadow:0 0 24px #5ac8ff55,0 0 4px #5ac8ff33}
+  #wordmark .s{color:var(--dim);font-size:12px;margin-top:2px}
+  #wordmark .s b{color:var(--ink);font-weight:600}
+
+  #rail{top:20px;right:20px;width:296px;background:#0b0d12ee;border:1px solid var(--line);
+        border-radius:14px;padding:14px 16px;box-shadow:0 18px 50px #00000080}
+  #rail h3{margin:0 0 8px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+           color:var(--dim);font-weight:600}
+  .digits{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:22px;font-weight:600;
+          color:var(--ink);font-variant-numeric:tabular-nums}
+  .digits small{font-size:11px;color:var(--dim);font-weight:400;margin-left:6px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;margin:2px 0}
+  .row .lab{color:var(--dim);font-size:11px;letter-spacing:.04em}
+  .strip{margin:3px 0 9px}
+  .strip .bar{height:4px;background:#161a22;border-radius:2px;overflow:hidden}
+  .strip .fill{height:100%;background:var(--cobalt);opacity:.85;width:0;transition:width .3s ease-out}
+  .strip .lab{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:3px}
+  .strip .lab b{color:var(--ink)}
+  #topn{font-size:11px;color:var(--dim);line-height:1.6;margin-top:6px}
+  #topn b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  #status{bottom:26px;left:30px;font-size:13px;color:var(--dim);display:flex;align-items:center;gap:9px}
+  #status .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+  #status .dot.live{background:var(--cobalt);box-shadow:0 0 10px var(--cobalt);animation:pulse .8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+
+  #lb{top:210px;left:30px;width:280px;background:#0b0d12ee;border:1px solid var(--line);
+      border-radius:14px;padding:12px 14px;box-shadow:0 18px 50px #00000080}
+  #lb h3{margin:0 0 8px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+         color:var(--dim);font-weight:600}
+  #lb .you{font-size:12px;color:var(--dim);margin-bottom:8px}
+  #lb .you b{color:var(--cobalt)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);
+     text-align:left;padding:4px 6px;font-weight:600}
+  td{padding:5px 6px;border-top:1px solid #161a22;font-variant-numeric:tabular-nums}
+  td.name{font-weight:600}
+  tr.me td{background:#101623}
+  tr.fly td.name{color:var(--cobalt)}
+  .wr{color:var(--ink);font-weight:600}
+  .btns{display:flex;gap:8px;margin-top:10px}
+  button{background:#141821;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+         padding:7px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:background .15s,border-color .15s}
+  button:hover{border-color:#39404f;background:#1a1f2a}
+  #animal{font-size:12px;color:var(--dim);margin-top:8px}
+  #animal b{color:var(--cobalt)}
+
+  #vend{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
+        gap:16px;z-index:40;background:#06070ad9}
+  #vend.show{display:flex}
+  #vendmsg{font-family:"Big Shoulders Display","Arial Narrow",sans-serif;font-size:54px;font-weight:700;margin:0}
+  #vendmsg.fly{color:var(--cobalt);text-shadow:0 0 34px #5ac8ff66}
+  #vendmsg.you{color:var(--red);text-shadow:0 0 34px #ff4a3d66}
+  #vend .row{display:flex;gap:8px}
+  #vend input{background:#10131a;border:1px solid var(--line);border-radius:9px;color:var(--ink);
+              padding:10px 12px;font:inherit;font-size:13px;width:230px}
+  #vend button{background:var(--cobalt);border-color:var(--cobalt);color:#04121f;font-weight:650}
+  #saveline{color:var(--dim);font-size:12px;min-height:16px}
+  #foot{position:fixed;bottom:8px;right:20px;font-size:10.5px;color:#565b68;z-index:5}
 </style>
 </head>
 <body>
-<header>
-  <h1>Tic-Tac-Toe vs. a <b>Fruit Fly Brain</b></h1>
-  <span class="sub" id="hdr">loading connectome…</span>
-  <span id="score">you <b id="sw">0</b> · fly <b id="sf">0</b> · draw <b id="sd">0</b></span>
-</header>
+<canvas id="scene"></canvas>
 
-<div class="wrap">
-  <div>
-    <div class="panel">
-      <h2>The fly is playing you</h2>
-      <div class="stagewrap"><div id="board"></div></div>
-      <div id="status"><span class="dot"></span><span id="msg">Loading…</span></div>
-      <div class="bar">
-        <button class="act p" id="new">New game</button>
-        <select id="side">
-          <option value="white">You play first (cyan)</option>
-          <option value="black">Fly plays first</option>
-        </select>
-        <button class="act" id="undo">Undo</button>
-        <span class="sub" style="margin-left:auto">moves</span>
-      </div>
-      <div id="history">—</div>
-    </div>
-
-    <div class="panel" style="margin-top:16px">
-      <h2>Leaderboard · humans vs the fly</h2>
-      <div class="youline" id="youline">you are <b>—</b></div>
-      <div class="lbwrap"><table class="lb" id="lb">
-        <thead><tr><th>#</th><th>player</th><th>W</th><th>L</th><th>D</th><th>win rate</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </div>
-  </div>
-
-  <div>
-    <div class="panel">
-      <h2>Male CNS connectome · live</h2>
-      <canvas id="brain"></canvas>
-      <div class="blegend">
-        <div><i style="background:#4aa8ff"></i>optic lobe</div>
-        <div><i style="background:#b48cff"></i>central brain</div>
-        <div><i style="background:#ff5a4a"></i>ventral nerve cord + motor</div>
-        <div><i style="background:#ffe08a"></i>spiking now</div>
-      </div>
-      <div class="stats">
-        <div class="stat"><b id="s1">—</b><span>spikes</span></div>
-        <div class="stat"><b id="s2">—</b><span>motor spikes</span></div>
-        <div class="stat"><b id="s3">—</b><span>sim ms</span></div>
-        <div class="stat"><b id="s4">—</b><span>ticks</span></div>
-      </div>
-      <div class="cands" id="cands"></div>
-      <div id="topn"></div>
-      <div id="note">166,700 neurons · 25.6M fixed synapses · only the motor readout was trained. drag the brain to orbit.</div>
-    </div>
-  </div>
+<div class="hud" id="wordmark">
+  <div class="t">FLYT3</div>
+  <div class="s">tic-tac-toe vs. a fruit fly brain — <b id="hdr">loading connectome…</b></div>
 </div>
 
-<div class="vend" id="vend">
+<div class="hud" id="lb">
+  <h3>Leaderboard · humans vs the fly</h3>
+  <div class="you" id="youline">you are <b>—</b></div>
+  <table>
+    <thead><tr><th>player</th><th>W</th><th>L</th><th>D</th><th>win rate</th></tr></thead>
+    <tbody id="lbt"></tbody>
+  </table>
+  <div class="btns">
+    <button id="new">New game</button>
+    <button id="undo">Undo</button>
+  </div>
+  <div id="animal"></div>
+</div>
+
+<div class="hud" id="rail">
+  <h3>Connectome · decision window</h3>
+  <div class="digits"><span id="s1">—</span><small>spikes / 48 ticks</small></div>
+  <div class="row"><span class="lab">motor spikes</span><span class="digits" style="font-size:14px" id="s2">—</span></div>
+  <div class="row"><span class="lab">sim time</span><span class="digits" style="font-size:14px"><span id="s3">—</span> ms</span></div>
+  <div style="margin-top:12px" class="strip">
+    <div class="lab"><b>the fly's move</b><span id="chosen">—</span></div>
+    <div class="bar"><div class="fill" id="chosenfill" style="width:0%"></div></div>
+  </div>
+  <div id="probs"></div>
+  <div id="topn"></div>
+</div>
+
+<div class="hud" id="status"><span class="dot"></span><span id="msg">Loading…</span></div>
+
+<div id="vend">
   <p id="vendmsg"></p>
-  <div class="row">
-    <input id="pname" maxlength="24" placeholder="your animal name">
-    <button class="act p" id="save">Save result</button>
-  </div>
-  <div class="row">
-    <button class="act" id="again">Play again</button>
-  </div>
-  <div class="sub" id="saveline"></div>
+  <div class="row"><input id="pname" maxlength="24" placeholder="your animal name">
+  <button id="save">Save result</button></div>
+  <div class="row"><button id="again">Play again</button></div>
+  <div id="saveline"></div>
 </div>
 
-<footer>
-  Connectome: male <i>Drosophila melanogaster</i> CNS v1.0, HHMI Janelia + Google Research, CC-BY
-  (166,700 neurons, 25.6M directed connections retained). The wiring is never modified and nothing
-  about tic-tac-toe is stored in it. Your marks drive photoreceptor patches (own pieces → R1–R6,
-  your marks → R8); the fly's move is a trained linear readout of descending + motor-neuron spikes,
-  reinforced by <span id="trainline">self-play on a GPU</span> — every loss also fires an aversive
-  PPL101 dopamine pulse, doomfly-style. Method after
-  <a href="https://github.com/nftechie/doomfly">nftechie/doomfly</a>.
-</footer>
+<div id="foot">MaleCNS v1.0 · 166,700 neurons · 25.6M fixed synapses · readout trained · Janelia+Google CC-BY · method: nftechie/doomfly</div>
 
 <script src="/vendor/three.min.js"></script>
 <script>
-const N=3;
+/* ============================== game state ============================== */
 let G={id:null,cells:[],over:false,fly_to_move:false,busy:false,hist:[],result:null};
 let player=localStorage.getItem('flyt3-name')||'';
 let score=JSON.parse(localStorage.getItem('flyt3-score')||'{"w":0,"f":0,"d":0}');
+const CELL=1.05;
 
-const boardEl=document.getElementById('board');
-function drawBoard(){
-  boardEl.innerHTML='';
+/* ============================== three.js scene ============================== */
+let renderer,scene,camera,boardGroup,brainPts,brainMat,pickables=[],cellRings=[],pieces={};
+let camTheta=0.66,camPhi=1.08,camDist=6.0;
+const camTgt=new THREE.Vector3(0,0.15,0);
+let hoverCell=-1,flicker=0,waveT=-1,waveData=null;
+const cellPos=k=>{const c=k%3,r=(k/3)|0;return new THREE.Vector3((c-1)*CELL,0.06,(r-1)*CELL)};
+
+function buildBoard(){
+  boardGroup=new THREE.Group();
+  const shelf=new THREE.Mesh(new THREE.BoxGeometry(4.7,0.22,4.7),
+    new THREE.MeshStandardMaterial({color:0x0d0f14,roughness:.5,metalness:.4}));
+  shelf.position.y=-0.16;boardGroup.add(shelf);
+  // grid as four glass tubes
+  for(const [rotY,x,z] of [[0,-CELL/2,0],[0,CELL/2,0],[Math.PI/2,0,-CELL/2],[Math.PI/2,0,CELL/2]]){
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,3.3,12),
+      new THREE.MeshStandardMaterial({color:0x39404c,roughness:.25,metalness:.4,
+        emissive:new THREE.Color(0x5ac8ff),emissiveIntensity:.05,transparent:true,opacity:.92}));
+    t.rotation.y=rotY;t.position.set(x,0.06,z);boardGroup.add(t);
+  }
   for(let k=0;k<9;k++){
-    const b=document.createElement('button');
-    b.className='cellbtn'+(G.cells[k]==='fly'?' fly':G.cells[k]==='human'?' you':'');
-    b.textContent=G.cells[k]==='fly'?'✕':G.cells[k]==='human'?'◯':'';
-    b.disabled=G.busy||G.over||G.cells[k]!==0;
-    b.onclick=()=>humanMove(k);
-    boardEl.appendChild(b);
+    const p=cellPos(k);
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(CELL*.94,CELL*.94),
+      new THREE.MeshBasicMaterial({visible:false}));
+    plane.rotation.x=-Math.PI/2;plane.position.copy(p).setY(0.04);
+    plane.userData.cell=k;pickables.push(plane);boardGroup.add(plane);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.33,0.018,8,40),
+      new THREE.MeshBasicMaterial({color:0x5ac8ff,transparent:true,opacity:0}));
+    ring.rotation.x=Math.PI/2;ring.position.copy(p).setY(0.05);
+    cellRings.push(ring);boardGroup.add(ring);
+  }
+  scene.add(boardGroup);
+}
+
+/* pieces: crossed electrode-red bars / a cobalt ring, lying flat on the board */
+function makeX(){
+  const g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:0x1a0c0a,roughness:.3,
+    emissive:new THREE.Color(0xff4a3d),emissiveIntensity:2.4});
+  const bar=new THREE.CylinderGeometry(0.05,0.05,0.68,10);
+  const b1=new THREE.Mesh(bar,mat);b1.rotation.z=Math.PI/2;
+  const b2=new THREE.Mesh(bar,mat);b2.rotation.z=Math.PI/2;b2.rotation.y=Math.PI/2;
+  const tip=new THREE.SphereGeometry(0.056,10,10);
+  const tipMat=new THREE.MeshStandardMaterial({color:0x220a08,
+    emissive:new THREE.Color(0xff2b1d),emissiveIntensity:3.2});
+  [[0.3,0,0],[-0.3,0,0]].forEach(([x,y,z])=>{
+    const s=new THREE.Mesh(tip,tipMat);s.position.set(x,y,z);g.add(s);});
+  [[0,0,0.3],[0,0,-0.3]].forEach(([x,y,z])=>{
+    const s=new THREE.Mesh(tip,tipMat);s.position.set(x,y,z);g.add(s);});
+  g.add(b1,b2);
+  const wrap=new THREE.Group();wrap.add(g);wrap.rotation.y=Math.PI/4;
+  return wrap;
+}
+function makeO(){
+  const g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:0x08131c,roughness:.3,
+    emissive:new THREE.Color(0x5ac8ff),emissiveIntensity:2.4});
+  const t=new THREE.Mesh(new THREE.TorusGeometry(0.27,0.05,12,44),mat);
+  t.rotation.x=Math.PI/2;g.add(t);
+  return g;
+}
+function addPiece(k,who){
+  const p=cellPos(k);
+  const piece=who==='fly'?makeO():makeX();
+  piece.position.set(p.x,2.6,p.z);
+  scene.add(piece);pieces[k]={mesh:piece,born:performance.now()};
+}
+function drawBoard(){
+  for(let k=0;k<9;k++){
+    const want=G.cells[k],have=!!pieces[k];
+    if(want&&!have) addPiece(k,want);
   }
 }
-function setMsg(t,live){document.getElementById('msg').textContent=t;
-  document.querySelector('.dot').className='dot'+(live?' live':'');}
-function drawScore(){sw.textContent=score.w; sf.textContent=score.f; sd.textContent=score.d;}
-function saveScore(){localStorage.setItem('flyt3-score',JSON.stringify(score));drawScore();}
 
-function drawFly(f){
-  document.getElementById('s1').textContent=Math.round(f.spikes).toLocaleString();
-  document.getElementById('s2').textContent=Math.round(f.motor_spikes).toLocaleString();
-  document.getElementById('s3').textContent=f.sim_ms;
-  document.getElementById('s4').textContent=f.spikes_per_step.length;
-  if(window.brainPulse) brainPulse(f.active||[], f.spikes_per_step);
-  const cands=document.getElementById('cands'); cands.innerHTML='';
-  const names=['top-left','top-mid','top-right','mid-left','center','mid-right','bot-left','bot-mid','bot-right'];
-  f.probs.forEach((p,i)=>{
-    const d=document.createElement('div'); d.className='cand'+(i===f.col?' chosen':'');
-    d.innerHTML=`<span class="n">${names[i]}</span><span class="track">
-      <span class="fill" style="width:${Math.round(p*100)}%"></span></span>
-      <span class="v">${(p*100).toFixed(1)}%</span>`;
-    cands.appendChild(d);
+function tickScene(){
+  const now=performance.now();
+  for(const k in pieces){
+    const P=pieces[k],age=(now-P.born)/1000;
+    if(age<0.7){
+      const e=1-Math.pow(1-Math.min(1,age/0.55),3);
+      P.mesh.position.y=2.6*(1-e)+0.14*e;
+      P.mesh.rotation.y=(1-e)*1.1;
+      P.mesh.traverse(o=>{if(o.material&&o.material.emissiveIntensity!==undefined)
+        o.material.emissiveIntensity=2.4+7*(1-e);});
+    }
+  }
+  cellRings.forEach((r,k)=>{
+    const target=(k===hoverCell&&G.cells[k]===0&&!G.over&&!G.fly_to_move&&!G.busy)?0.45:0;
+    r.material.opacity+=(target-r.material.opacity)*0.22;
   });
-  document.getElementById('topn').innerHTML='busiest motor neurons: '+
-    f.top_neurons.map(n=>`<b>${n.type}</b> ${(n.rate*100).toFixed(1)}%`).join(' · ');
+  if(G.fly_to_move||G.busy){
+    flicker=(Math.random()-0.5)*0.2;
+    boardGroup.children.forEach(o=>{
+      if(o.material&&o.material.emissive&&o.material.emissive.getHex()===0x5ac8ff)
+        o.material.emissiveIntensity=Math.max(0.0,0.05+flicker);});
+  } else {
+    boardGroup.children.forEach(o=>{
+      if(o.material&&o.material.emissive&&o.material.emissive.getHex()===0x5ac8ff)
+        o.material.emissiveIntensity+= (0.05-o.material.emissiveIntensity)*0.1;});
+  }
+  if(waveT>=0&&waveData){
+    waveT++;
+    const i=Math.min(waveData.length-1,Math.floor(waveT/3));
+    if(brainMat) brainMat.uniforms.uBoost.value=Math.min(0.5,0.02+waveData[i][2]*0.0006);
+    if(waveT>waveData.length*3+60) waveT=-1;
+  }
 }
 
+function updateCamera(){
+  const hr=camDist*Math.sin(camPhi), y=camDist*Math.cos(camPhi);
+  const x=camTgt.x+hr*Math.sin(camTheta), z=camTgt.z+hr*Math.cos(camTheta);
+  camera.position.lerp(new THREE.Vector3(x,Math.max(0.9,y),z),0.09);
+  camera.lookAt(camTgt);
+}
+
+/* ============================== init + input ============================== */
+window.addEventListener('DOMContentLoaded',()=>{
+  const canvas=document.getElementById('scene');
+  try { renderer=new THREE.WebGLRenderer({canvas,antialias:true}); }
+  catch(e){ renderer=null; start2D(); return; }
+  if(!renderer.getContext()) { renderer=null; start2D(); return; }
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  scene=new THREE.Scene();
+  scene.fog=new THREE.Fog(0x06070a,8,18);
+  camera=new THREE.PerspectiveCamera(46,innerWidth/innerHeight,0.1,60);
+  scene.add(new THREE.AmbientLight(0x232830,1.5));
+  const key=new THREE.PointLight(0x5ac8ff,30,20);key.position.set(3,5.5,2.5);scene.add(key);
+  const warm=new THREE.PointLight(0xff4a3d,12,14);warm.position.set(-3,2.4,-2.5);scene.add(warm);
+  buildBoard();
+
+  const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
+  let dragging=false,downX=0,downY=0,moved=0;
+  canvas.addEventListener('pointerdown',e=>{dragging=true;moved=0;downX=e.clientX;downY=e.clientY;});
+  window.addEventListener('pointermove',e=>{
+    ndc.set((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
+    if(dragging){
+      moved+=Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY);
+      camTheta-=(e.clientX-downX)*0.006;
+      camPhi=Math.max(0.55,Math.min(1.35,camPhi+(e.clientY-downY)*0.004));
+      downX=e.clientX;downY=e.clientY;
+    } else if(camera){
+      ray.setFromCamera(ndc,camera);
+      const hit=ray.intersectObjects(pickables,false)[0];
+      hoverCell=hit?hit.object.userData.cell:-1;
+      canvas.style.cursor=(hoverCell>=0&&canPlay())?'pointer':'grab';
+    }
+  });
+  window.addEventListener('pointerup',e=>{
+    if(dragging&&moved<6&&hoverCell>=0) humanMove(hoverCell);
+    dragging=false;
+  });
+  canvas.addEventListener('pointerleave',()=>hoverCell=-1);
+
+  const resize=()=>{renderer.setSize(innerWidth,innerHeight,false);
+    camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();};
+  addEventListener('resize',resize);resize();
+
+  fetch('/api/brain').then(r=>r.json()).then(b=>{
+    const n=b.points.length;
+    const pos=new Float32Array(n*3),col=new Float32Array(n*3),sz=new Float32Array(n);
+    const cOB=new THREE.Color('#5ac8ff'),cCB=new THREE.Color('#cfd6ff'),cVNC=new THREE.Color('#ff4a3d');
+    for(let i=0;i<n;i++){
+      const [x,y,z,r]=b.points[i];pos.set([x*1.15,y*1.15+0.35,z*1.15-3.4],i*3);
+      const c=r===0?cOB:(r===1?cCB:cVNC);col.set([c.r,c.g,c.b],i*3);sz[i]=r===2?2.2:1.9;
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+    geo.setAttribute('psize',new THREE.BufferAttribute(sz,1));
+    brainMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
+      uniforms:{uTime:{value:0},uBoost:{value:0}},
+      vertexShader:`attribute float psize;varying vec3 vColor;
+        void main(){vColor=color;vec4 mv=modelViewMatrix*vec4(position,1.0);
+        gl_PointSize=psize*(52.0/-mv.z);gl_Position=projectionMatrix*mv;}`,
+      fragmentShader:`varying vec3 vColor;uniform float uTime;uniform float uBoost;
+        void main(){float d=length(gl_PointCoord-0.5);
+        float a=smoothstep(0.5,0.05,d)*(0.11+0.05*sin(uTime*1.4)+uBoost);
+        gl_FragColor=vec4(vColor,a);}`,
+      vertexColors:true});
+    brainPts=new THREE.Points(geo,brainMat);
+    scene.add(brainPts);
+  });
+  requestAnimationFrame(loop);
+});
+
+/* ---- 2D fallback (no WebGL): same game, flat neon rendering ---- */
+let ctx2d;
+function start2D(){
+  const cv=document.getElementById('scene');
+  ctx2d=cv.getContext('2d');
+  const resize=()=>{cv.width=innerWidth;cv.height=innerHeight;};
+  addEventListener('resize',resize);resize();
+  cv.addEventListener('click',e=>{
+    const rect=cv.getBoundingClientRect();
+    const x=e.clientX-rect.left, y=e.clientY-rect.top;
+    const ox=rect.width/2-1.5*CELL2D, oy=rect.height/2-1.5*CELL2D;
+    const c=Math.floor((x-ox)/CELL2D), r=Math.floor((y-oy)/CELL2D);
+    if(c>=0&&c<3&&r>=0&&r<3) humanMove(r*3+c);
+  });
+  requestAnimationFrame(loop2d);
+}
+const CELL2D=130;
+function loop2d(t){
+  requestAnimationFrame(loop2d);
+  if(!ctx2d) return;
+  const w=cv2dWidth(),h=cv2dHeight();
+  ctx2d.fillStyle='#06070a';ctx2d.fillRect(0,0,w,h);
+  const ox=w/2-1.5*CELL2D, oy=h/2-1.5*CELL2D;
+  ctx2d.lineWidth=5;ctx2d.strokeStyle='#2b3340';
+  for(const [x1,y1,x2,y2] of [[ox+CELL2D,oy,ox+CELL2D,oy+3*CELL2D],[ox+2*CELL2D,oy,ox+2*CELL2D,oy+3*CELL2D],
+      [ox,oy+CELL2D,ox+3*CELL2D,oy+CELL2D],[ox,oy+2*CELL2D,ox+3*CELL2D,oy+2*CELL2D]]){
+    ctx2d.beginPath();ctx2d.moveTo(x1,y1);ctx2d.lineTo(x2,y2);ctx2d.stroke();
+  }
+  for(let k=0;k<9;k++){
+    const c=k%3,r=(k/3)|0, x=ox+c*CELL2D, y=oy+r*CELL2D;
+    if(G.cells[k]==='fly'){
+      ctx2d.strokeStyle='#5ac8ff';ctx2d.lineWidth=6;ctx2d.shadowColor='#5ac8ff';ctx2d.shadowBlur=18;
+      ctx2d.beginPath();ctx2d.arc(x+CELL2D/2,y+CELL2D/2,CELL2D*0.3,0,7);ctx2d.stroke();
+    } else if(G.cells[k]==='human'){
+      ctx2d.strokeStyle='#ff4a3d';ctx2d.lineWidth=6;ctx2d.shadowColor='#ff4a3d';ctx2d.shadowBlur=18;
+      ctx2d.beginPath();ctx2d.moveTo(x+18,y+18);ctx2d.lineTo(x+CELL2D-18,y+CELL2D-18);
+      ctx2d.moveTo(x+CELL2D-18,y+18);ctx2d.lineTo(x+18,y+CELL2D-18);ctx2d.stroke();
+    }
+    ctx2d.shadowBlur=0;
+  }
+}
+function cv2dWidth(){return document.getElementById('scene').width}
+function cv2dHeight(){return document.getElementById('scene').height}
+function canPlay(){return !G.busy&&!G.over&&!G.fly_to_move&&hoverCell>=0&&G.cells[hoverCell]===0}
+
+let lastT=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  if(document.hidden) return;
+  if(t-lastT<33) return; lastT=t;
+  if(brainPts){ brainPts.rotation.y+=0.0016; brainMat.uniforms.uTime.value=t*0.001;
+    brainMat.uniforms.uBoost.value*=0.96; }
+  tickScene(); updateCamera();
+  renderer.render(scene,camera);
+}
+function playWave(wave){waveData=wave;waveT=0;}
+
+/* ============================== api + flow ============================== */
 async function newGame(side){
   G.busy=true; setMsg('waking the connectome…',true); drawBoard();
   const r=await fetch('/api/game',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({human_side:side||document.getElementById('side').value,player})})
     .then(r=>r.json()).catch(e=>({detail:'server unreachable'}));
   if(r.detail){ setMsg(r.detail); G.busy=false; drawBoard(); return; }
-  G={...r,busy:false,hist:[],result:null}; document.getElementById('vend').classList.remove('show');
+  for(const k in pieces){ scene.remove(pieces[k].mesh); delete pieces[k]; }
+  G={...r,busy:false,hist:[],result:null};
+  document.getElementById('vend').classList.remove('show');
   updateHist(); render(r);
 }
 function render(r){
@@ -228,16 +397,34 @@ function render(r){
   if(r.fly) drawFly(r.fly);
   if(r.result===1){ endMsg('the fly wins','fly'); score.f++; }
   else if(r.result===-1){ endMsg('you win','you'); score.w++; }
-  else if(r.result===0){ endMsg('draw',''); score.d++; }
-  else if(G.over){ endMsg('draw',''); }
-  else setMsg(G.fly_to_move?'the fly is thinking…':'your move — click a square',G.fly_to_move);
+  else if(r.result===0){ endMsg('a draw',''); score.d++; }
+  else if(G.over){ endMsg('a draw',''); }
+  else setMsg(G.fly_to_move?'the fly is thinking — transformer load rising':'your move — click a square',G.fly_to_move);
   saveScore();
 }
 function endMsg(t,cls){document.getElementById('vendmsg').textContent=t;
   const v=document.getElementById('vend'); v.classList.remove('show'); void v.offsetWidth;
   document.getElementById('vendmsg').className=cls; v.classList.add('show');
-  setMsg(t+' — save your result or play again');
-  document.getElementById('saveline').textContent='';}
+  setMsg(t+' — save your result or play again'); document.getElementById('saveline').textContent='';}
+function drawFly(f){
+  document.getElementById('s1').textContent=Math.round(f.spikes).toLocaleString();
+  document.getElementById('s2').textContent=Math.round(f.motor_spikes).toLocaleString();
+  document.getElementById('s3').textContent=f.sim_ms;
+  const names=['top-left','top-mid','top-right','mid-left','center','mid-right','bot-left','bot-mid','bot-right'];
+  document.getElementById('chosen').textContent=names[f.col];
+  document.getElementById('chosenfill').style.width=(f.probs[f.col]*100).toFixed(0)+'%';
+  const pd=document.getElementById('probs'); pd.innerHTML='';
+  f.probs.forEach((p,i)=>{
+    if(G.cells[i]!==0) return;
+    const d=document.createElement('div'); d.className='strip';
+    d.innerHTML=`<div class="lab"><span>${names[i]}</span><span>${(p*100).toFixed(1)}%</span></div>
+      <div class="bar"><div class="fill" style="width:${Math.round(p*100)}%"></div></div>`;
+    pd.appendChild(d);
+  });
+  document.getElementById('topn').innerHTML='busiest motor neurons: '+
+    f.top_neurons.slice(0,6).map(n=>`<b>${n.type}</b> ${(n.rate*100).toFixed(1)}%`).join(' · ');
+  playWave(f.wave);
+}
 async function humanMove(k){
   if(G.busy||G.over||G.fly_to_move) return;
   if(G.cells[k]!==0){ drawBoard(); return; }
@@ -247,13 +434,12 @@ async function humanMove(k){
       body:JSON.stringify({game_id:G.id,col:k,player})}).then(r=>r.json());
     if(r.detail){ setMsg(r.detail); return; }
     G.hist.push(k); updateHist(); render(r);
-  } catch(e){ setMsg('connection hiccup — try again'); }
+  } catch(e){ setMsg('connection hiccup — try that square again'); }
   finally { G.busy=false; drawBoard(); }
 }
 function updateHist(){
-  document.getElementById('history').innerHTML=G.hist.length
-    ? G.hist.map((c,i)=>`${i%2?'<b>fly</b>':'you'} ${c}`).join(' · ')
-    : '—';
+  document.getElementById('history').textContent=G.hist.length
+    ? G.hist.map((c,i)=>(i%2?'fly ':'you ')+c).join(' · ') : '—';
 }
 document.getElementById('new').onclick=()=>newGame();
 document.getElementById('again').onclick=()=>newGame();
@@ -270,157 +456,36 @@ document.getElementById('save').onclick=async()=>{
   document.getElementById('youline').innerHTML='you are <b>'+name+'</b>';
   const r=await fetch('/api/finish',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({game_id:G.id,name})}).then(r=>r.json());
-  document.getElementById('saveline').textContent = r.ok ? 'saved to the leaderboard' : (r.detail||'could not save');
+  document.getElementById('saveline').textContent=r.ok?'saved to the leaderboard':(r.detail||'could not save');
   if(r.ok) loadLeaderboard();
 };
-drawScore(); drawBoard();
-
 function loadLeaderboard(){
   fetch('/api/leaderboard').then(r=>r.json()).then(lb=>{
-    const tb=document.querySelector('#lb tbody'); tb.innerHTML='';
+    const tb=document.getElementById('lbt'); tb.innerHTML='';
     lb.players.forEach((p,i)=>{
-      const tr=document.createElement('tr');
-      if(p.name===player) tr.className='me';
-      tr.innerHTML=`<td>${i+1}</td><td class="name">${p.name}</td><td>${p.w}</td><td>${p.l}</td>
-        <td>${p.d}</td><td><span class="wr">${p.win_rate}%</span></td>`;
+      const tr=document.createElement('tr'); if(p.name===player) tr.className='me';
+      tr.innerHTML=`<td class="name">${p.name}</td><td>${p.w}</td><td>${p.l}</td><td>${p.d}</td>
+        <td><span class="wr">${p.win_rate}%</span></td>`;
       tb.appendChild(tr);
     });
-    if(!lb.players.length){
-      tb.innerHTML='<tr><td colspan="6" style="color:var(--dim)">no games yet — be the first</td></tr>';
-    }
-    const f=lb.fly, fg=lb.fly_games||1;
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>—</td><td class="name" style="color:var(--accent)">the fly</td>
-      <td>${f.w}</td><td>${f.l}</td><td>${f.d}</td>
-      <td><span class="wr">${Math.round(f.w/fg*100)}%</span> of ${fg}</td>`;
+    if(!lb.players.length) tb.innerHTML='<tr><td colspan="5" style="color:var(--dim)">no games yet — be the first</td></tr>';
+    const f=lb.fly, fg=Math.max(1,lb.fly_games);
+    const tr=document.createElement('tr'); tr.className='fly';
+    tr.innerHTML=`<td class="name">the fly</td><td>${f.w}</td><td>${f.l}</td><td>${f.d}</td>
+      <td><span class="wr">${Math.round(f.w/fg*100)}%</span></td>`;
     tb.appendChild(tr);
   }).catch(()=>{});
 }
 fetch('/healthz').then(r=>r.json()).then(h=>{
-  document.getElementById('hdr').textContent=`${h.device.toUpperCase()} · fixed wiring, trained readout`;
+  document.getElementById('hdr').textContent=h.device.toUpperCase()+' · fixed wiring · trained readout';
   if(player) document.getElementById('youline').innerHTML='you are <b>'+player+'</b>';
   else fetch('/api/animal').then(r=>r.json()).then(a=>{
     player=a.name; localStorage.setItem('flyt3-name',a.name);
-    document.getElementById('youline').innerHTML='you are <b>'+a.name+'</b> <span style="opacity:.6">(claim it by saving a result)</span>';
+    document.getElementById('youline').innerHTML='you are <b>'+a.name+'</b> — save a result to claim it';
   });
   document.getElementById('pname').value=player;
   newGame(); loadLeaderboard();
 }).catch(()=>setMsg('server unreachable'));
-fetch('/report.json').then(r=>r.json()).then(rep=>{
-  document.getElementById('trainline').textContent=
-    `self-play (${rep.games.toLocaleString()} games) on a GPU`;
-}).catch(()=>{});
-</script>
-
-<script>
-/* ---- 3D connectome viewer (three.js), driven by real per-move spikes ---- */
-const BNAME=['optic lobe','central brain','VNC'];
-let brain=null;
-
-function initBrain(){
-  const cv=document.getElementById('brain');
-  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(50,1,0.1,50);
-  camera.position.set(0,0.4,3.2);
-
-  fetch('/api/brain').then(r=>r.json()).then(b=>{
-    const n=b.points.length;
-    const pos=new Float32Array(n*3), col=new Float32Array(n*3), size=new Float32Array(n);
-    const cOL=new THREE.Color('#4aa8ff'), cCB=new THREE.Color('#b48cff'), cVNC=new THREE.Color('#ff5a4a');
-    for(let i=0;i<n;i++){
-      const [x,y,z,r]=b.points[i];
-      pos.set([x,y,z],i*3);
-      const c=r===0?cOL:(r===1?cCB:cVNC);
-      col.set([c.r,c.g,c.b],i*3);
-      size[i]=r===2?1.7:1.4;
-    }
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-    geo.setAttribute('psize',new THREE.BufferAttribute(size,1));
-    const mat=new THREE.ShaderMaterial({
-      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
-      uniforms:{uTime:{value:0}, uBoost:{value:0}},
-      vertexShader:`
-        attribute float psize;
-        varying vec3 vColor;
-        void main(){
-          vColor=color;
-          vec4 mv=modelViewMatrix*vec4(position,1.0);
-          gl_PointSize=psize*(55.0/-mv.z);
-          gl_Position=projectionMatrix*mv;
-        }`,
-      fragmentShader:`
-        varying vec3 vColor;
-        uniform float uTime; uniform float uBoost;
-        void main(){
-          float d=length(gl_PointCoord-0.5);
-          float a=smoothstep(0.5,0.05,d)*(0.10+0.04*sin(uTime*1.5)+uBoost);
-          gl_FragColor=vec4(vColor,a);
-        }`,
-      vertexColors:true
-    });
-    const cloud=new THREE.Points(geo,mat);
-    scene.add(cloud);
-    brain={renderer,scene,camera,cloud,mat,rotY:0,rotX:-0.15,velY:0.0035,velX:0,
-           glow:new Float32Array(n),idle:0,cv};
-    resize(); loop();
-  });
-
-  function resize(){
-    if(!brain) return;
-    const w=cv.clientWidth,h=cv.clientHeight;
-    renderer.setSize(w,h,false);
-    camera.aspect=w/h; camera.updateProjectionMatrix();
-  }
-  window.addEventListener('resize',resize);
-
-  let drag=null;
-  cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY}; if(brain){brain.velY=0;brain.idle=0;}});
-  window.addEventListener('pointermove',e=>{
-    if(!drag||!brain) return;
-    brain.rotY+=(e.clientX-drag.x)*0.005;
-    brain.rotX+= (e.clientY-drag.y)*0.005;
-    brain.rotX=Math.max(-1.2,Math.min(1.2,brain.rotX));
-    drag={x:e.clientX,y:e.clientY};
-  });
-  window.addEventListener('pointerup',()=>{drag=null; if(brain) brain.velY=0.0035;});
-
-  let last=0;
-  function loop(t){
-    requestAnimationFrame(loop);
-    if(!brain) return;
-    if(document.hidden) return;                 // no CPU burn in hidden tabs
-    if(t-last<33) return;                       // ~30fps cap
-    last=t;
-    brain.mat.uniforms['uTime'].value=t*0.001;
-    if(!drag){ brain.rotY+=brain.velY; brain.rotX+=( -0.15-brain.rotX )*0.002; }
-    brain.cloud.rotation.y=brain.rotY;
-    brain.cloud.rotation.x=brain.rotX;
-    // decay glow, boost whole-cloud brightness right after a move
-    const g=brain.glow; let any=0;
-    for(let i=0;i<g.length;i++){ if(g[i]>0){ g[i]*=0.94; any+=g[i]; } }
-    const u=brain.mat.uniforms['uBoost'];
-    u.value=Math.max(0,u.value*0.90-0.002);
-    brain.cloud.geometry.attributes.psize.needsUpdate=true;
-    renderer.render(brain.scene,camera);
-  }
-}
-
-window.brainPulse=function(active, perStep){
-  if(!brain||!active||!active.length) return;
-  for(const [i,c] of active){
-    if(i<brain.glow.length) brain.glow[i]=Math.min(2.2, 0.4+Math.log2(1+c)*0.6);
-    brain.cloud.geometry.attributes.psize.array[i]=1.4+Math.min(4.0,c*0.5);
-  }
-  brain.cloud.geometry.attributes.psize.needsUpdate=true;
-  brain.mat.uniforms['uBoost'].value=Math.min(0.5, 0.08+active.length*0.0015);
-  brain.idle=0;
-};
-
-initBrain();
 </script>
 </body>
 </html>

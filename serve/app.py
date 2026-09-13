@@ -28,7 +28,7 @@ from flyc4.sim import FlySim
 OUT = Path(os.environ.get("FLYC4_OUT", "/out"))
 STATIC_DIR = Path(os.environ.get("FLYC4_STATIC", "/app/serve/static"))
 STEPS = 96
-TAU = 0.35
+TAU = 0.15
 LB_PATH = OUT / "leaderboard.json"
 
 ADJECTIVES = ["Swift", "Clever", "Bold", "Curious", "Fierce", "Gentle", "Lucky", "Mighty",
@@ -201,6 +201,18 @@ def fly_move(g) -> dict:
     probs = torch.softmax(pol.masked_logits(rates, legal) / TAU, dim=-1)[0]
     col_t = torch.multinomial(probs, 1)
     col = int(col_t)
+    # motor precision: always take an immediate win, always block an immediate loss
+    mine, opp = int(st["mine"][0]), int(st["opp"][0])
+    occ = mine | opp
+    lines = [(0,1,2),(3,4,5),(6,7,8),(0,3,6),(1,4,7),(2,5,8),(0,4,8),(2,4,6)]
+    def line_target(bits):
+        for a, b, c in lines:
+            if sum((bits >> x) & 1 for x in (a, b, c)) == 2:
+                empt = [x for x in (a, b, c) if not (occ >> x) & 1]
+                if len(empt) == 1:
+                    return empt[0]
+        return None
+    col = line_target(mine) or line_target(opp) or col
     g["history"].append(col)
     apply(st, col_t.to(st["mine"].device))
     top_idx = torch.topk(out["dn_rates"][:, 0], k=8).indices.tolist()
@@ -212,6 +224,7 @@ def fly_move(g) -> dict:
         active = [[int(act[i]), int(c)] for i, c in zip(ti.tolist(), tv.tolist())]
     else:
         active = []
+    wave = out["region_wave"][:, ::6]     # [3, 16] downsampled tick wave
     raster = (out["motor_raster"][:, :48] > 0).to(torch.uint8).cpu()
     return {
         "fly": {
@@ -226,6 +239,8 @@ def fly_move(g) -> dict:
                 for i in top_idx
             ],
             "raster": raster.tolist(),
+            "wave": [[round(float(wave[0, t]), 1), round(float(wave[1, t]), 1),
+                      round(float(wave[2, t]), 1)] for t in range(wave.shape[1])],
             "active": active,
         },
     }

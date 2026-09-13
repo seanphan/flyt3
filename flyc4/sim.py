@@ -3,11 +3,11 @@
 Approximate neural dynamics (engineering choice, doomfly-style): synapses are
 signed contact-count strengths (GABA edges negative, from the dataset's
 consensus neurotransmitter predictions); state is a leaky integrate-and-fire
-membrane per neuron under per-neuron homeostatic threshold control, which
-keeps responses graded and prevents runaway recruitment. Board cells drive
-retinal patches: own pieces -> 6-cell R1-R6 patches, opponent pieces ->
-5-cell R8 patches. The wiring is never modified; nothing about tic-tac-toe
-is stored in it.
+membrane per neuron under per-neuron homeostatic threshold control. Board
+cells drive retinal patches: own pieces -> 6-cell R1-R6 patches, opponent
+pieces -> 5-cell R8 patches. Per-tick spike counts are tracked per brain
+region (optic / central / VNC) so the web view can play the real wave.
+The wiring is never modified; nothing about tic-tac-toe is stored in it.
 """
 from __future__ import annotations
 
@@ -42,6 +42,8 @@ class FlySim:
         self.ppl = torch.from_numpy(z["ppl_idx"]).to(device)
         self.decay, self.noise, self.dtype = decay, noise, dtype
         self.homeo_k, self.target_rate = homeo_k, target_rate
+        self.region = torch.from_numpy(z["region"].astype(np.int64)).to(device)
+        self._region_masks = [(self.region == c).to(self.dtype) for c in (0, 1, 2)]
 
     def drive_from_board(self, mine: torch.Tensor, opp: torch.Tensor,
                          batch: int, own_drive: float = 2.4, opp_drive: float = 1.2):
@@ -62,12 +64,13 @@ class FlySim:
             count_idx: torch.Tensor | None = None):
         """Simulate `steps` ticks for a [N, B] drive; returns decision signals."""
         batch = drive.shape[1]
-        counts = (torch.zeros(count_idx.numel(), batch, device=self.device, dtype=self.dtype)
-                  if count_idx is not None else None)
         v = torch.rand(self.N, batch, device=self.device, dtype=self.dtype) * 0.05
         s_prev = torch.zeros(self.N, batch, device=self.device, dtype=self.dtype)
         dn_counts = torch.zeros(self.motor.numel(), batch, device=self.device, dtype=self.dtype)
+        region_wave = torch.zeros(3, steps, device=self.device, dtype=self.dtype)
         total_spikes = torch.zeros(steps, device=self.device)
+        counts = (torch.zeros(count_idx.numel(), batch, device=self.device, dtype=self.dtype)
+                  if count_idx is not None else None)
         raster = torch.zeros(self.motor.numel(), steps, device=self.device) if want_raster else None
         noise = self.noise * torch.randn(self.N, 1, device=self.device, dtype=self.dtype)
         rate = torch.full((self.N, 1), self.target_rate, device=self.device, dtype=self.dtype)
@@ -80,6 +83,8 @@ class FlySim:
             rate = 0.97 * rate + 0.03 * s.mean(1, keepdim=True)
             s_prev = s
             dn_counts += s[self.motor]
+            for ri, rmask in enumerate(self._region_masks):
+                region_wave[ri, t] = (s * rmask.unsqueeze(1)).sum()
             if counts is not None:
                 counts += s[count_idx]
             total_spikes[t] = s.sum()
@@ -90,6 +95,7 @@ class FlySim:
             "total_spikes": total_spikes,
             "motor_raster": raster,
             "counts": counts,
+            "region_wave": region_wave,
         }
 
     @torch.no_grad()
