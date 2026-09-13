@@ -156,6 +156,26 @@ def startup():
     state["dev"] = dev
     state["brain"] = build_brain_sample(meta)
     state["brain_idx_t"] = torch.from_numpy(state["brain"]["idx"]).to(dev)
+    # multi-source BFS hop depth from all sensory inputs along real wiring
+    n = meta["n_nodes"]
+    z = meta["arrays"]
+    reach = torch.zeros(n, device=dev)
+    reach[torch.from_numpy(z["sensory_idx"].astype(np.int64)).to(dev)] = 1.0
+    binW = torch.sparse_csr_tensor(
+        torch.from_numpy(z["indptr"].astype(np.int32)),
+        torch.from_numpy(z["indices"].astype(np.int32)),
+        torch.ones(len(z["indices"]), dtype=torch.float32),
+        size=(n, n), device=dev)
+    depth = torch.full((n,), 1e9, device=dev)
+    depth[reach.bool()] = 0
+    frontier = reach
+    for level in range(1, 65):
+        nxt = ((torch.sparse.mm(binW, frontier.unsqueeze(1)).squeeze(1) > 0) & (depth > level))
+        if not nxt.any():
+            break
+        depth[nxt] = float(level)
+        frontier = nxt.float()
+    state["hop_depth"] = depth.cpu().numpy().astype(np.float32)
     pol = Readout(state["sim"].motor.numel()).to(dev)
     if (OUT / "readout.npz").exists():
         z = np.load(OUT / "readout.npz")
@@ -242,6 +262,7 @@ def fly_move(g) -> dict:
             "wave": [[round(float(wave[0, t]), 1), round(float(wave[1, t]), 1),
                       round(float(wave[2, t]), 1)] for t in range(wave.shape[1])],
             "active": active,
+            "silenced": state["sim"].silenced,
         },
     }
 
@@ -320,6 +341,22 @@ def leaderboard_view():
             "fly_games": fly["w"] + fly["l"] + fly["d"]}
 
 
+@app.post("/api/silence")
+def api_silence(body: dict):
+    """Lesion a brain region live: 0 optic, 1 central, 2 VNC, null restores."""
+    r = body.get("region")
+    r = int(r) if r is not None and str(r) != "null" else None
+    if r is not None and r not in (0, 1, 2):
+        raise HTTPException(409, "region must be 0, 1 or 2")
+    state["sim"].set_silence(r)
+    return {"ok": True, "silenced": r}
+
+
+@app.get("/api/silence")
+def api_silence_get():
+    return {"silenced": state["sim"].silenced}
+
+
 @app.get("/api/leaderboard")
 def api_leaderboard():
     return leaderboard_view()
@@ -339,9 +376,11 @@ def api_animal():
 @app.get("/api/brain")
 def api_brain():
     b = state["brain"]
+    dep = state["hop_depth"][b["idx"]]
     return JSONResponse({
-        "points": [[round(float(x), 3), round(float(y), 3), round(float(zz), 3), int(rr)]
-                   for (x, y, zz), rr in zip(b["points"], b["region"])],
+        "points": [[round(float(x), 3), round(float(y), 3), round(float(zz), 3), int(rr),
+                    (int(d) if d < 1e8 else -1)]
+                   for (x, y, zz), rr, d in zip(b["points"], b["region"], dep)],
     })
 
 

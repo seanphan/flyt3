@@ -42,6 +42,10 @@
   .strip .lab b{color:var(--ink)}
   #topn{font-size:11px;color:var(--dim);line-height:1.6;margin-top:6px}
   #topn b{color:var(--ink);font-variant-numeric:tabular-nums}
+  button.les{background:#10131a;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+             padding:3px 9px;font-size:10.5px;cursor:pointer}
+  button.les:hover{border-color:#39404f;color:var(--ink)}
+  button.les.on{border-color:var(--red);color:var(--red)}
 
   #status{bottom:26px;left:30px;font-size:13px;color:var(--dim);display:flex;align-items:center;gap:9px}
   #status .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
@@ -116,6 +120,15 @@
   </div>
   <div id="probs"></div>
   <div id="topn"></div>
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+    <div style="color:var(--dim);font-size:11px;margin-bottom:6px">circuit lesion — silence a region and watch the fly degrade</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="les" data-r="0">optic lobe</button>
+      <button class="les" data-r="1">central brain</button>
+      <button class="les" data-r="2">VNC motor</button>
+      <button class="les" data-r="">restore</button>
+    </div>
+  </div>
 </div>
 
 <div class="hud" id="status"><span class="dot"></span><span id="msg">Loading…</span></div>
@@ -296,11 +309,14 @@ window.addEventListener('DOMContentLoaded',()=>{
 
   fetch('/api/brain').then(r=>r.json()).then(b=>{
     const n=b.points.length;
+    window.brainData={depth:new Float32Array(n),region:new Uint8Array(n),baseCol:new Float32Array(n*3)};
     const pos=new Float32Array(n*3),col=new Float32Array(n*3),sz=new Float32Array(n);
     const cOB=new THREE.Color('#5ac8ff'),cCB=new THREE.Color('#cfd6ff'),cVNC=new THREE.Color('#ff4a3d');
     for(let i=0;i<n;i++){
-      const [x,y,z,r]=b.points[i];pos.set([x*1.15,y*1.15+0.35,z*1.15-3.4],i*3);
-      const c=r===0?cOB:(r===1?cCB:cVNC);col.set([c.r,c.g,c.b],i*3);sz[i]=r===2?2.2:1.9;
+      const [x,y,z,r,d]=b.points[i];pos.set([x*1.15,y*1.15+0.35,z*1.15-3.4],i*3);
+      const c=r===0?cOB:(r===1?cCB:cVNC);col.set([c.r,c.g,c.b],i*3);
+      window.brainData.depth[i]=d; window.brainData.region[i]=r;
+      window.brainData.baseCol.set([c.r,c.g,c.b],i*3);sz[i]=r===2?2.2:1.9;
     }
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
@@ -319,8 +335,27 @@ window.addEventListener('DOMContentLoaded',()=>{
     brainPts=new THREE.Points(geo,brainMat);
     scene.add(brainPts);
   });
+  document.querySelectorAll('button.les').forEach(b=>{
+    b.onclick=async()=>{
+      const r=b.dataset.r===''?null:parseInt(b.dataset.r);
+      await fetch('/api/silence',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({region:r})});
+      syncLesionButtons(r);
+      if(window.brainSilence) window.brainSilence(r);
+    };
+  });
+  fetch('/api/silence').then(r=>r.json()).then(s=>{
+    syncLesionButtons(s.silenced);
+    if(window.brainSilence&&s.silenced!==null) window.brainSilence(s.silenced);
+  }).catch(()=>{});
   requestAnimationFrame(loop);
 });
+function syncLesionButtons(r){
+  document.querySelectorAll('button.les').forEach(b=>{
+    const v=b.dataset.r===''?null:parseInt(b.dataset.r);
+    b.classList.toggle('on', v===r);
+  });
+}
 
 /* ---- 2D fallback (no WebGL): same game, flat neon rendering ---- */
 let ctx2d;
@@ -374,10 +409,50 @@ function loop(t){
   if(t-lastT<33) return; lastT=t;
   if(brainPts){ brainPts.rotation.y+=0.0016; brainMat.uniforms.uTime.value=t*0.001;
     brainMat.uniforms.uBoost.value*=0.96; }
-  tickScene(); updateCamera();
+  tickScene(); tickBrainWave(performance.now()); updateCamera();
   renderer.render(scene,camera);
 }
-function playWave(wave){waveData=wave;waveT=0;}
+function playWave(f){
+  if(!window.brainWave){ waveData=f.wave; waveT=0; return; }
+  window.brainWave(f);
+}
+window.brainSilence=function(r){
+  if(!window.brainData||!brainPts) return;
+  const col=brainPts.geometry.attributes.color;
+  const bc=window.brainData.baseCol;
+  for(let i=0;i<col.count;i++){
+    if(r===null || window.brainData.region[i]!==r){
+      const bc=window.brainData.baseCol; col.array.set([bc[i*3],bc[i*3+1],bc[i*3+2]],i*3);
+    } else {
+      col.array.set([0.10,0.11,0.13],i*3);
+    }
+  }
+  col.needsUpdate=true;
+};
+window.brainWave=function(f){
+  if(!window.brainData){ waveData=f.wave; waveT=0; return; }
+  brainWaveState={active:f.active||[],start:performance.now(),depth:window.brainData.depth};
+};
+let brainWaveState=null;
+function tickBrainWave(now){
+  if(!brainWaveState||!brainPts) return;
+  const col=brainPts.geometry.attributes.color, bc=window.brainData.baseCol;
+  const {active,start,depth}=brainWaveState;
+  for(const [pi,cnt] of active){
+    const d=(depth[pi]<1e8?depth[pi]:20)*80;
+    const a=(now-start)-d;
+    if(a>0&&a<1600){
+      const k=1-a/1600, boost=Math.min(2.2,0.5+Math.log2(1+cnt)*0.7)*k;
+      col.array[pi*3]  =Math.min(1.6,bc[pi*3]+boost*0.9);
+      col.array[pi*3+1]=Math.min(1.6,bc[pi*3+1]+boost*0.8);
+      col.array[pi*3+2]=Math.min(1.6,bc[pi*3+2]+boost*0.5);
+    } else if(a>=1600){
+      col.array[pi*3]=bc[pi*3];col.array[pi*3+1]=bc[pi*3+1];col.array[pi*3+2]=bc[pi*3+2];
+    }
+  }
+  col.needsUpdate=true;
+  if(performance.now()-start>4200) brainWaveState=null;
+}
 
 /* ============================== api + flow ============================== */
 async function newGame(side){
@@ -423,7 +498,7 @@ function drawFly(f){
   });
   document.getElementById('topn').innerHTML='busiest motor neurons: '+
     f.top_neurons.slice(0,6).map(n=>`<b>${n.type}</b> ${(n.rate*100).toFixed(1)}%`).join(' · ');
-  playWave(f.wave);
+  playWave(f);
 }
 async function humanMove(k){
   if(G.busy||G.over||G.fly_to_move) return;
