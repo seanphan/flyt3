@@ -41,7 +41,7 @@ spec:
               memory: 8Gi
               cpu: "3"
           volumeMounts:
-            - { name: library, mountPath: /library, readOnly: true }
+            - { name: library, mountPath: /library }
       volumes:
         - name: library
           hostPath:

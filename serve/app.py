@@ -200,7 +200,6 @@ def fly_move(g) -> dict:
     legal = legal_mask(st)
     probs = torch.softmax(pol.masked_logits(rates, legal) / TAU, dim=-1)[0]
     col_t = torch.multinomial(probs, 1)
-    col = int(col_t)
     # motor precision: always take an immediate win, always block an immediate loss
     mine, opp = int(st["mine"][0]), int(st["opp"][0])
     occ = mine | opp
@@ -212,7 +211,8 @@ def fly_move(g) -> dict:
                 if len(empt) == 1:
                     return empt[0]
         return None
-    col = line_target(mine) or line_target(opp) or col
+    col = line_target(mine) or line_target(opp) or int(col_t)
+    col_t = torch.tensor([col], device=st["mine"].device)
     g["history"].append(col)
     apply(st, col_t.to(st["mine"].device))
     top_idx = torch.topk(out["dn_rates"][:, 0], k=8).indices.tolist()
