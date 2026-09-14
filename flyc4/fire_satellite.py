@@ -1,11 +1,10 @@
 """The fly brain reads satellite tiles: post-wildfire damage classification.
 
-Pipeline after jerryjliu/fly_ocr (MIT): satellite tiles drive the retina
-(brightness -> R1-R6 receptor rows, red-dominance -> R8 rows), the frozen
-MaleCNS v1.0 circuit (166,700 neurons, 25.6M synapses) integrates 48 ticks,
-and log spike counts of 1,024 downstream neurons become the features of a
-tiny standardized MLP decoder. Dataset: Etkin et al. structure-damage
-satellite tiles (5 classes) via kevincluo/structure_wildfire_damage_classification.
+Same recipe as the aerial fire fly (fire_detect.py, after jerryjliu/fly_ocr):
+99-dim retinal sample -> frozen MaleCNS v1.0 circuit (48-tick LIF response) ->
+log1p spike counts of a FIXED set of 1,024 downstream neurons (picked once
+from the busiest non-sensory neurons on the first 512 training drives) ->
+standardized 64-unit MLP decoder. The wiring is never trained.
 """
 from __future__ import annotations
 
@@ -107,32 +106,49 @@ def main():
                       "classes": int(y.max() + 1),
                       "seconds": round(time.time() - t0, 1)}), flush=True)
 
-    # stratified 85/15 split
+    # stratified 85/15 split on the retinal samples, before the circuit pass
     g_cpu = torch.Generator().manual_seed(0)
-    Xtr_n, Xva_n, ytr, yva = [], [], [], []
-    mu, sd = X.mean(0), X.std(0).clamp_min(1e-6)
-    Xn = (X - mu) / sd
+    Xtr_l, Xva_l, ytr_l, yva_l = [], [], [], []
     for c in range(5):
         idx = (y == c).nonzero().squeeze(1)
         idx = idx[torch.randperm(idx.numel(), generator=g_cpu).to(dev)]
         k = max(1, int(idx.numel() * 0.85))
-        Xtr_n.append(Xn[idx[:k]]); ytr.append(y[idx[:k]])
-        Xva_n.append(Xn[idx[k:]]); yva.append(y[idx[k:]])
-    Xtr, ytr = torch.cat(Xtr_n), torch.cat(ytr)
-    Xva, yva = torch.cat(Xva_n), torch.cat(yva)
+        Xtr_l.append(X[idx[:k]]); ytr_l.append(y[idx[:k]])
+        Xva_l.append(X[idx[k:]]); yva_l.append(y[idx[k:]])
+    ftr, ytr = torch.cat(Xtr_l), torch.cat(ytr_l)
+    fva, yva = torch.cat(Xva_l), torch.cat(yva_l)
+
+    # frozen circuit: fixed downstream set from the first 512 training drives,
+    # then one 48-tick response per tile
+    t1 = time.time()
+    downstream = pick_downstream(sim, build_drive(sim, ftr[:512].cpu().numpy()),
+                                 args.steps, 1024)
+    Xtr = run_features(sim, build_drive(sim, ftr.cpu().numpy()), args.steps,
+                       downstream=downstream)
+    Xva = run_features(sim, build_drive(sim, fva.cpu().numpy()), args.steps,
+                       downstream=downstream)
+    print(json.dumps({"evt": "circuit_features", "train": list(Xtr.shape),
+                      "val": list(Xva.shape),
+                      "seconds": round(time.time() - t1, 1)}), flush=True)
 
     torch.manual_seed(0)
+    mu, sd = Xtr.mean(0), Xtr.std(0).clamp_min(1e-6)
+    Xtr_n, Xva_n = (Xtr - mu) / sd, (Xva - mu) / sd
     dec = torch.nn.Sequential(torch.nn.Linear(Xtr.shape[1], 64), torch.nn.ReLU(),
                               torch.nn.Linear(64, 5)).to(dev)
+    w_class = torch.tensor([int((ytr == c).sum()) for c in range(5)],
+                           dtype=torch.float32, device=dev)
+    w_class = w_class.sum() / w_class.clamp_min(1)
     opt = torch.optim.Adam(dec.parameters(), lr=3e-3)
     for ep in range(args.epochs):
         perm = torch.randperm(Xtr.shape[0], device=dev)
         for i in range(0, Xtr.shape[0], 256):
             idx = perm[i:i + 256]
-            loss = torch.nn.functional.cross_entropy(dec(Xtr[idx]), ytr[idx])
+            loss = torch.nn.functional.cross_entropy(dec(Xtr_n[idx]), ytr[idx],
+                                                     weight=w_class)
             opt.zero_grad(); loss.backward(); opt.step()
     with torch.no_grad():
-        pred = dec(Xva).argmax(1)
+        pred = dec(Xva_n).argmax(1)
         acc = float((pred == yva).float().mean())
         cm = torch.zeros(5, 5, dtype=torch.int64)
         for p_, y_ in zip(pred.tolist(), yva.tolist()):
@@ -140,12 +156,17 @@ def main():
     report = {
         "task": "post-wildfire damage classification of satellite tiles (5 classes) "
                 "through the frozen fly connectome",
-        "circuit": "MaleCNS v1.0 frozen; 48-tick response; 1,024 downstream-neuron "
-                   "log spike features",
-        "decoder": "standardized 64-unit MLP, 5 classes",
+        "circuit": "MaleCNS v1.0 frozen; 48-tick response; log1p spike counts of a "
+                   "fixed 1,024 downstream-neuron set (picked once from the busiest "
+                   "non-sensory neurons on the first 512 training drives)",
+        "decoder": "standardized 64-unit MLP, 5 classes, class-weighted CE",
         "val_accuracy": round(acc, 4),
         "confusion_rows_true_cols_pred": cm.tolist(),
         "val_images": int(Xva.shape[0] // 5 * 5),
+        "pixel_baseline": {"val_accuracy": 0.8573,
+                           "note": "an earlier artifact under this name was a 99-dim "
+                                   "pooled-pixel MLP that never ran the circuit; kept "
+                                   "as pixel_baseline.npz for comparison"},
         "dataset": "Etkin et al. satellite structure-damage tiles via "
                    "kevincluo/structure_wildfire_damage_classification",
         "recipe_after": "jerryjliu/fly_ocr (MIT): frozen circuit + tiny decoder",
@@ -155,7 +176,8 @@ def main():
     np.savez(args.out / "readout.npz",
              W1=dec[0].weight.detach().cpu().numpy(), b1=dec[0].bias.detach().cpu().numpy(),
              W2=dec[2].weight.detach().cpu().numpy(), b2=dec[2].bias.detach().cpu().numpy(),
-             mu=mu.cpu().numpy(), sd=sd.cpu().numpy())
+             mu=mu.cpu().numpy(), sd=sd.cpu().numpy(),
+             downstream=downstream.cpu().numpy().astype(np.int64))
     print(json.dumps({"evt": "done", "val_accuracy": report["val_accuracy"],
                       "confusion": report["confusion_rows_true_cols_pred"]}), flush=True)
 

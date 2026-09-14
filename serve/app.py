@@ -8,6 +8,7 @@ Endpoints are sync so FastAPI runs the GPU work in its worker threadpool.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import time
@@ -15,13 +16,16 @@ import uuid
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 import torch
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from flyc4.connectome import load_graph
 from flyc4.env import apply, init, legal_mask
+from flyc4.fire_satellite import build_drive, retinal_sample
 from flyc4.policy import Readout
 from flyc4.sim import FlySim
 
@@ -30,6 +34,11 @@ STATIC_DIR = Path(os.environ.get("FLYC4_STATIC", "/app/serve/static"))
 STEPS = 96
 TAU = 0.15
 LB_PATH = OUT / "leaderboard.json"
+FIRE_DIR = OUT / "fire_satellite"
+FIRE_SAMPLES_DIR = FIRE_DIR / "samples"
+FIRE_CLASSES = ["No damage", "Affected (1-9%)", "Minor (10-25%)",
+                "Major (26-50%)", "Destroyed (>50%)"]
+FIRE_STEPS = 48
 
 ADJECTIVES = ["Swift", "Clever", "Bold", "Curious", "Fierce", "Gentle", "Lucky", "Mighty",
               "Nimble", "Quiet", "Sly", "Tenacious", "Valiant", "Wily", "Zesty", "Cosmic",
@@ -189,6 +198,17 @@ def startup():
     state["sessions"] = {}
     state["motor_types"] = meta["motor_types"]
     state["lb"] = load_leaderboard()
+    state["fire"] = None
+    state["fire_samples"] = []
+    fz = FIRE_DIR / "readout.npz"
+    if fz.exists():
+        z = np.load(fz)
+        load = lambda k: torch.from_numpy(z[k]).to(dev)  # noqa: E731
+        state["fire"] = {k: load(k) for k in ("W1", "b1", "W2", "b2", "mu", "sd",
+                                               "downstream")}
+    mf = FIRE_SAMPLES_DIR / "manifest.json"
+    if mf.exists():
+        state["fire_samples"] = json.loads(mf.read_text())["tiles"]
 
 
 def new_game(human_side: str, player: str) -> dict:
@@ -266,6 +286,103 @@ def fly_move(g) -> dict:
             "silenced": state["sim"].silenced,
         },
     }
+
+
+def fire_classify(img: Image.Image, sample: dict | None = None) -> dict:
+    """Satellite tile -> frozen circuit response -> 5-class damage verdict.
+
+    Same recipe as training (flyc4/fire_satellite.py): 99-dim retinal sample
+    drives the sensory rows, 48-tick response, log1p spike counts of the
+    fixed 1,024 downstream-neuron set -> standardized 64-unit MLP decoder.
+    The same single circuit pass supplies the 3D-wave telemetry.
+    """
+    f, sim = state["fire"], state["sim"]
+    t0 = time.time()
+    feats = retinal_sample(img)
+    drive = build_drive(sim, feats[None])
+    downstream = f["downstream"]
+    count_idx = torch.cat([downstream, state["brain_idx_t"]])
+    out = sim.run(drive, FIRE_STEPS, count_idx=count_idx)
+    counts = out["counts"][:, 0]
+    x = torch.log1p(counts[:downstream.numel()]).unsqueeze(0)
+    x = (x - f["mu"]) / f["sd"]
+    h = torch.relu(x @ f["W1"].T + f["b1"])
+    probs = torch.softmax((h @ f["W2"].T + f["b2"])[0], dim=-1)
+    brain_counts = counts[downstream.numel():]
+    act = torch.nonzero(brain_counts > 0).squeeze(1)
+    k = min(140, act.numel())
+    if k:
+        tv, ti = torch.topk(brain_counts[act], k)
+        active = [[int(act[i]), int(c)] for i, c in zip(ti.tolist(), tv.tolist())]
+    else:
+        active = []
+    wave = out["region_wave"][:, ::6]
+    resp = {
+        "verdict": int(torch.argmax(probs)),
+        "classes": FIRE_CLASSES,
+        "probs": [round(float(p), 4) for p in probs.tolist()],
+        "spikes": float(out["total_spikes"].sum()),
+        "sim_ms": round((time.time() - t0) * 1000, 1),
+        "wave": [[round(float(wave[0, t]), 1), round(float(wave[1, t]), 1),
+                  round(float(wave[2, t]), 1)] for t in range(wave.shape[1])],
+        "active": active,
+        "silenced": sim.silenced,
+    }
+    if sample is not None:
+        resp["sample_id"] = sample["id"]
+        resp["true_label"] = sample["true_label"]
+    return resp
+
+
+@app.get("/api/fire/info")
+def api_fire_info():
+    rep = {}
+    rp = FIRE_DIR / "report.json"
+    if rp.exists():
+        try:
+            rep = json.loads(rp.read_text())
+        except Exception:
+            rep = {}
+    return {"available": state["fire"] is not None, "classes": FIRE_CLASSES,
+            "val_accuracy": rep.get("val_accuracy"), "samples": len(state["fire_samples"])}
+
+
+@app.get("/api/fire/samples")
+def api_fire_samples():
+    return {"tiles": state["fire_samples"], "classes": FIRE_CLASSES}
+
+
+@app.get("/api/fire/sample/{sid}")
+def api_fire_sample(sid: str):
+    for t in state["fire_samples"]:
+        if t["id"] == sid:
+            return FileResponse(FIRE_SAMPLES_DIR / t["file"], media_type="image/jpeg")
+    raise HTTPException(404, "unknown sample")
+
+
+@app.post("/api/fire/classify")
+async def api_fire_classify(request: Request):
+    """Tile in, verdict + connectome telemetry out. Body is raw image bytes
+    (any content type) or JSON {sample_id} naming a dataset sample tile."""
+    if state["fire"] is None:
+        raise HTTPException(409, "fire decoder not loaded")
+    ct = request.headers.get("content-type", "")
+    sample = None
+    if "application/json" in ct:
+        sid = (await request.json()).get("sample_id")
+        sample = next((t for t in state["fire_samples"] if t["id"] == sid), None)
+        if sample is None:
+            raise HTTPException(404, "unknown sample")
+        img = Image.open(FIRE_SAMPLES_DIR / sample["file"]).convert("RGB")
+    else:
+        raw = await request.body()
+        if not raw:
+            raise HTTPException(409, "empty body: send image bytes or {\"sample_id\": ...}")
+        try:
+            img = Image.open(io.BytesIO(raw)).convert("RGB")
+        except Exception:
+            raise HTTPException(409, "not a decodable image")
+    return await run_in_threadpool(fire_classify, img, sample)
 
 
 @app.post("/api/game")
@@ -432,7 +549,8 @@ def api_state(game_id: str):
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "device": state["dev"], "games": len(state["sessions"])}
+    return {"ok": True, "device": state["dev"], "games": len(state["sessions"]),
+            "fire": state["fire"] is not None}
 
 
 @app.get("/metrics.json")

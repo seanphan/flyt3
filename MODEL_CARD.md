@@ -13,7 +13,7 @@ trained. Play: the web app in the GitHub repo (seanphan/flyt3).
 | `readout.npz` | Tic-tac-toe (serving) | Symmetric self-play REINFORCE + value baseline + entropy | 1,000,448 | 62% win vs random |
 | `mb_weights.npz` | Tic-tac-toe (mushroom body) | Dopamine-gated KC→MBON depression, no gradients (Handler 2019, Bennett 2021) | 1,000,000 | 74% win vs random |
 | `fire/readout.npz` | Aerial fire (FLAME) | Frozen circuit + 64-unit decoder, 3-class | — | 55.2% (chance 33%) |
-| `fire_satellite/readout.npz` | Etkin satellite tiles | Frozen circuit + standardized 64-unit decoder, 5-class | — | **85.7%** (chance 20%) |
+| `fire_satellite/readout.npz` | Etkin satellite tiles | Frozen circuit + standardized 64-unit decoder, 5-class | — | **60.8%** (chance 20%); pixel-feature baseline 85.7% kept alongside |
 
 ## Training data
 - Tic-tac-toe: pure self-play (both flies)
@@ -23,9 +23,14 @@ trained. Play: the web app in the GitHub repo (seanphan/flyt3).
 
 ## Honest limits
 Neural dynamics, retinal mapping and dopamine gating are engineering choices,
-not validated biology. The fire decoder reads coarse 99-patch retinal samples;
+not validated biology. The fire decoders read coarse 99-patch retinal samples;
 a 3° tilt broke the fly_ocr original and our tiles are no more forgiving.
 The tic-tac-toe task is solved — 74% vs random is not superhuman.
+The satellite circuit fly (60.8%) is clearly below a pooled-pixel MLP on the
+same retinal samples (85.7%, `pixel_baseline.npz`): the frozen circuit is a
+weak feature extractor for this task. An earlier artifact under
+`fire_satellite/readout.npz` was that pixel MLP mislabeled as a circuit
+decoder; the current file is a genuine circuit decoder.
 
 ## Credits
 MaleCNS v1.0: HHMI Janelia + Google (CC-BY) · dopamine rule: Handler 2019,

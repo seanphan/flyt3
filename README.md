@@ -78,7 +78,16 @@ extractor + tiny decoder, after jerryjliu/fly_ocr):
 - **Aerial fire fly** — FLAME drone imagery, 3-class (fire/smoke/non-fire):
   55.2% val accuracy (chance 33%). Report: `/library/datasets/flyc4/live/fire/report.json`.
 - **Satellite damage fly** — Etkin satellite tiles, 5-class post-wildfire
-  damage: **85.7% val accuracy** (chance 20%), 18,714 tiles through the frozen
+  damage: **60.8% val accuracy** (chance 20%), 18,714 tiles through the frozen
   circuit. Report: `/library/datasets/flyc4/live/fire_satellite/report.json`.
+  A pooled-pixel MLP baseline (no circuit) reaches 85.7% and is kept as
+  `pixel_baseline.npz` — an earlier artifact under this name was that pixel
+  MLP mislabeled as a circuit decoder.
 
-Trainer: `flyc4/fire_satellite.py` (parquet shards → retina → circuit → decoder).
+Trainer: `flyc4/fire_satellite.py` (parquet shards → retina → circuit → decoder),
+sample tiles for the web: `flyc4/fire_samples.py`.
+
+The web app has a **fire watch** mode (mode switch top-left, or `?mode=fire`):
+pick a dataset tile or upload one, the tile runs through the same frozen
+circuit, and the page shows the 5-class verdict, the live connectome wave, and
+the lesion switches degrading the fly in real time.

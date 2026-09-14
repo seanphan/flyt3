@@ -72,6 +72,33 @@
   button:hover{border-color:#39404f;background:#1a1f2a}
   #animal{font-size:12px;color:var(--dim);margin-top:8px}
   #animal b{color:var(--cobalt)}
+#modes{top:96px;left:30px;display:flex;gap:6px;z-index:10}
+button.mode{background:#10131a;border:1px solid var(--line);color:var(--dim);border-radius:8px;
+            padding:6px 14px;font:inherit;font-size:12px;cursor:pointer;letter-spacing:.03em}
+button.mode:hover{border-color:#39404f;color:var(--ink)}
+button.mode.on{border-color:var(--cobalt);color:var(--cobalt);background:#0d1622}
+button.mode:disabled{opacity:.4;cursor:not-allowed}
+#fire{top:210px;left:30px;width:280px;background:#0b0d12ee;border:1px solid var(--line);
+      border-radius:14px;padding:12px 14px;box-shadow:0 18px 50px #00000080;display:none}
+#fire h3{margin:0 0 8px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+         color:var(--dim);font-weight:600}
+#firetile-wrap{position:relative;margin-bottom:9px}
+#firetile{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1px solid var(--line);
+          display:block;background:#000}
+#fbadge{position:absolute;top:8px;left:8px;background:#0b0d12ee;border:1px solid var(--red);
+        color:var(--red);font-size:10px;border-radius:6px;padding:2px 7px;display:none}
+#fverdict{font-size:13px;margin-bottom:4px}
+#fverdict b{color:var(--cobalt)}
+#ftruth{font-size:11.5px;color:var(--dim);margin-top:6px;min-height:16px}
+#ftruth b{color:var(--ink)}
+#fthumbs{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:10px}
+#fthumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid var(--line);
+             cursor:pointer;opacity:.7;transition:opacity .15s,border-color .15s}
+#fthumbs img:hover{opacity:1;border-color:#39404f}
+#fthumbs img.sel{border-color:var(--cobalt);opacity:1}
+body.mode-fire #lb{display:none}
+body.mode-fire #fire{display:block}
+body.mode-fire #movestrip,body.mode-fire #probs,body.mode-fire #topn,body.mode-fire #s2row{display:none}
 
   #vend{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
         gap:16px;z-index:40;background:#06070ad9}
@@ -109,12 +136,33 @@
   <div id="animal"></div>
 </div>
 
+<div class="hud" id="modes">
+  <button class="mode on" data-m="ttt">tic-tac-toe</button>
+  <button class="mode" data-m="fire" id="firemode-btn">fire watch</button>
+</div>
+
+<div class="hud" id="fire">
+  <h3>Fire watch · satellite damage fly</h3>
+  <div id="firetile-wrap">
+    <img id="firetile" alt="satellite tile">
+    <div id="fbadge">optic lobe lesioned</div>
+  </div>
+  <div id="fverdict">the fly says: <b>—</b></div>
+  <div id="fprobs"></div>
+  <div id="ftruth"></div>
+  <div id="fthumbs"></div>
+  <div class="btns">
+    <button id="fupload-btn">Upload a tile</button>
+    <input type="file" id="fupload" accept="image/*" hidden>
+  </div>
+</div>
+
 <div class="hud" id="rail">
   <h3>Connectome · decision window</h3>
   <div class="digits"><span id="s1">—</span><small>spikes / 48 ticks</small></div>
-  <div class="row"><span class="lab">motor spikes</span><span class="digits" style="font-size:14px" id="s2">—</span></div>
+  <div class="row" id="s2row"><span class="lab">motor spikes</span><span class="digits" style="font-size:14px" id="s2">—</span></div>
   <div class="row"><span class="lab">sim time</span><span class="digits" style="font-size:14px"><span id="s3">—</span> ms</span></div>
-  <div style="margin-top:12px" class="strip">
+  <div style="margin-top:12px" class="strip" id="movestrip">
     <div class="lab"><b>the fly's move</b><span id="chosen">—</span></div>
     <div class="bar"><div class="fill" id="chosenfill" style="width:0%"></div></div>
   </div>
@@ -147,6 +195,8 @@
 <script>
 /* ============================== game state ============================== */
 let G={id:null,cells:[],over:false,fly_to_move:false,busy:false,hist:[],result:null};
+let MODE='ttt';
+let F={busy:false};
 let player=localStorage.getItem('flyt3-name')||'';
 let score=JSON.parse(localStorage.getItem('flyt3-score')||'{"w":0,"f":0,"d":0}');
 const CELL=1.05;
@@ -307,7 +357,7 @@ function tickScene(){
   }
   if(flyFly){
     flyFly.wingT+=dt;
-    const excited=(G.fly_to_move||G.busy)&&!G.over;
+    const excited=MODE==='fire'?F.busy:((G.fly_to_move||G.busy)&&!G.over);
     const hz=excited?26:4;
     const amp=excited?0.95:0.12;
     for(let i=0;i<2;i++){
@@ -458,6 +508,13 @@ function loop2d(t){
   if(ctx2d.canvas.width!==w) ctx2d.canvas.width=w;
   if(ctx2d.canvas.height!==h) ctx2d.canvas.height=h;
   ctx2d.fillStyle='#06070a';ctx2d.fillRect(0,0,w,h);
+  if(MODE==='fire'){
+    ctx2d.fillStyle='#828898';ctx2d.font='13px -apple-system,"Segoe UI",system-ui,sans-serif';
+    ctx2d.textAlign='center';
+    ctx2d.fillText('fire watch — the connectome wave needs WebGL; tile + verdict live in the panel',w/2,h/2);
+    ctx2d.textAlign='start';
+    return;
+  }
   const ox=w/2-1.5*CELL2D, oy=h/2-1.5*CELL2D;
   ctx2d.lineWidth=5;ctx2d.strokeStyle='#2b3340';
   for(const [x1,y1,x2,y2] of [[ox+CELL2D,oy,ox+CELL2D,oy+3*CELL2D],[ox+2*CELL2D,oy,ox+2*CELL2D,oy+3*CELL2D],
@@ -486,7 +543,7 @@ const _origDrawBoard=drawBoard;
 drawBoard=function(){ if(ctx2d){ board2dDirty=true; return; } _origDrawBoard(); mark2d(); };
 function cv2dWidth(){return document.getElementById('scene').width}
 function cv2dHeight(){return document.getElementById('scene').height}
-function canPlay(){return !G.busy&&!G.over&&!G.fly_to_move&&hoverCell>=0&&G.cells[hoverCell]===0}
+function canPlay(){return MODE==='ttt'&&!G.busy&&!G.over&&!G.fly_to_move&&hoverCell>=0&&G.cells[hoverCell]===0}
 
 let lastT=0;
 function loop(t){
@@ -544,13 +601,13 @@ function tickBrainWave(now){
 async function newGame(side){
   G.busy=true; setMsg('waking the connectome…',true); drawBoard();
   const r=await fetch('/api/game',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({human_side:side||document.getElementById('side').value,player})})
+    body:JSON.stringify({human_side:side||'white',player})})
     .then(r=>r.json()).catch(e=>({detail:'server unreachable'}));
   if(r.detail){ setMsg(r.detail); G.busy=false; drawBoard(); return; }
   for(const k in pieces){ scene.remove(pieces[k].mesh); delete pieces[k]; }
   G={...r,busy:false,hist:[],result:null};
   document.getElementById('vend').classList.remove('show');
-  updateHist(); render(r);
+  render(r);
 }
 function render(r){
   G.cells=r.cells; G.over=r.over; G.fly_to_move=r.fly_to_move;
@@ -593,20 +650,16 @@ function drawFly(f){
   }
 }
 async function humanMove(k){
-  if(G.busy||G.over||G.fly_to_move) return;
+  if(MODE!=='ttt'||G.busy||G.over||G.fly_to_move) return;
   if(G.cells[k]!==0){ drawBoard(); return; }
   G.busy=true; setMsg('dropping…'); drawBoard();
   try{
     const r=await fetch('/api/move',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({game_id:G.id,col:k,player})}).then(r=>r.json());
     if(r.detail){ setMsg(r.detail); return; }
-    G.hist.push(k); updateHist(); render(r);
+    G.hist.push(k); render(r);
   } catch(e){ setMsg('connection hiccup — try that square again'); }
   finally { G.busy=false; drawBoard(); }
-}
-function updateHist(){
-  document.getElementById('history').textContent=G.hist.length
-    ? G.hist.map((c,i)=>(i%2?'fly ':'you ')+c).join(' · ') : '—';
 }
 document.getElementById('new').onclick=()=>newGame();
 document.getElementById('again').onclick=()=>newGame();
@@ -614,7 +667,7 @@ document.getElementById('undo').onclick=async()=>{
   if(!G.id||G.busy) return;
   const r=await fetch('/api/undo',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({game_id:G.id})}).then(r=>r.json());
-  if(!r.detail){ G.hist=G.hist.slice(0,-1); updateHist(); render(r); }
+  if(!r.detail){ G.hist=G.hist.slice(0,-1); render(r); }
 };
 document.getElementById('save').onclick=async()=>{
   const name=document.getElementById('pname').value.trim();
@@ -643,6 +696,98 @@ function loadLeaderboard(){
     tb.appendChild(tr);
   }).catch(()=>{});
 }
+/* ============================== fire watch mode ============================== */
+const LESION_NAMES=['optic lobe','central brain','VNC motor'];
+let FIRE={info:null,tiles:[],classes:[],available:false};
+function setMode(m){
+  MODE=m;
+  document.body.classList.toggle('mode-fire',m==='fire');
+  document.querySelectorAll('button.mode').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  if(boardGroup) boardGroup.visible=(m==='ttt');
+  if(ctx2d) board2dDirty=true;
+  if(m==='fire'){ setMsg('fire watch — pick a dataset tile or upload one',F.busy); initFire(); }
+  else setMsg('your move — click a square');
+}
+document.querySelectorAll('button.mode').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+async function initFire(){
+  if(FIRE.info) return;
+  try{
+    FIRE.info=await fetch('/api/fire/info').then(r=>r.json());
+    FIRE.available=!!FIRE.info.available;
+    const btn=document.getElementById('firemode-btn');
+    btn.disabled=!FIRE.available;
+    btn.title=FIRE.available?'85.7% val, 5-class satellite damage fly':'fire decoder not loaded on the server';
+    if(!FIRE.available) return;
+    const s=await fetch('/api/fire/samples').then(r=>r.json());
+    FIRE.tiles=s.tiles; FIRE.classes=s.classes;
+    renderThumbs();
+    if(FIRE.tiles.length) pickSample(FIRE.tiles[0].id);
+  }catch(e){}
+}
+function renderThumbs(){
+  const box=document.getElementById('fthumbs'); box.innerHTML='';
+  FIRE.tiles.forEach(t=>{
+    const im=document.createElement('img');
+    im.src='/api/fire/sample/'+t.id; im.dataset.id=t.id;
+    im.title=FIRE.classes[t.true_label];
+    im.onclick=()=>pickSample(t.id);
+    box.appendChild(im);
+  });
+}
+async function pickSample(id){
+  document.querySelectorAll('#fthumbs img').forEach(t=>t.classList.toggle('sel',t.dataset.id===id));
+  document.getElementById('firetile').src='/api/fire/sample/'+id;
+  await classifyFire({sample_id:id},null);
+}
+async function classifyFire(jsonBody,fileBlob){
+  if(F.busy) return;
+  F.busy=true; setMsg('the fly is reading the tile…',true);
+  document.getElementById('ftruth').textContent='';
+  try{
+    const r=await fetch('/api/fire/classify',{method:'POST',
+      headers:{'Content-Type':fileBlob?(fileBlob.type||'image/jpeg'):'application/json'},
+      body:fileBlob||JSON.stringify(jsonBody)}).then(r=>r.json());
+    if(r.detail){ setMsg(r.detail); return; }
+    drawFire(r);
+  }catch(e){ setMsg('connection hiccup — try again'); }
+  finally{ F.busy=false; if(MODE==='fire') setMsg('fire watch — pick a dataset tile or upload one'); }
+}
+function drawFire(r){
+  document.getElementById('s1').textContent=Math.round(r.spikes).toLocaleString();
+  document.getElementById('s3').textContent=r.sim_ms;
+  document.getElementById('fverdict').innerHTML='the fly says: <b>'+r.classes[r.verdict]+'</b>';
+  setFireBadge(r.silenced);
+  const pal=['#5ac8ff','#9adcff','#ffd27a','#ff9a5a','#ff4a3d'];
+  const pd=document.getElementById('fprobs'); pd.innerHTML='';
+  r.probs.forEach((p,i)=>{
+    const d=document.createElement('div'); d.className='strip';
+    d.innerHTML=`<div class="lab"><span>${r.classes[i]}</span><span>${(p*100).toFixed(1)}%</span></div>
+      <div class="bar"><div class="fill" style="width:${Math.max(1,Math.round(p*100))}%;background:${i===r.verdict?pal[i%5]:'#2b3f52'}"></div></div>`;
+    pd.appendChild(d);
+  });
+  let t='';
+  if(r.true_label!==undefined&&r.true_label!==null){
+    const ok=r.verdict===r.true_label;
+    t='truth: <b>'+r.classes[r.true_label]+'</b> — '+(ok?'fly got it':'fly missed');
+  }
+  document.getElementById('ftruth').innerHTML=t;
+  playWave(r);
+}
+function setFireBadge(r){
+  const b=document.getElementById('fbadge');
+  if(r===null||r===undefined){ b.style.display='none'; return; }
+  b.textContent=(LESION_NAMES[r]||'region')+' lesioned — rerun a tile';
+  b.style.display='block';
+}
+document.getElementById('fupload-btn').onclick=()=>document.getElementById('fupload').click();
+document.getElementById('fupload').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  document.querySelectorAll('#fthumbs img').forEach(t=>t.classList.remove('sel'));
+  document.getElementById('firetile').src=URL.createObjectURL(f);
+  classifyFire(null,f);
+  e.target.value='';
+};
+
 fetch('/healthz').then(r=>r.json()).then(h=>{
   document.getElementById('hdr').textContent=h.device.toUpperCase()+' · fixed wiring · trained readout';
   if(player) document.getElementById('youline').innerHTML='you are <b>'+player+'</b>';
@@ -651,7 +796,8 @@ fetch('/healthz').then(r=>r.json()).then(h=>{
     document.getElementById('youline').innerHTML='you are <b>'+a.name+'</b> — save a result to claim it';
   });
   document.getElementById('pname').value=player;
-  newGame(); loadLeaderboard();
+  newGame(); loadLeaderboard(); initFire();
+  if(new URLSearchParams(location.search).get('mode')==='fire') setMode('fire');
 }).catch(()=>setMsg('server unreachable'));
 </script>
 </body>
