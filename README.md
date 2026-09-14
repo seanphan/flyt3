@@ -69,3 +69,16 @@ Serve after training:
 ```sh
 kubectl apply -f deploy/web.yaml           # NodePort 30180
 ```
+
+## Fire-detection flies
+
+Two trained variants beyond tic-tac-toe (both: frozen connectome as feature
+extractor + tiny decoder, after jerryjliu/fly_ocr):
+
+- **Aerial fire fly** — FLAME drone imagery, 3-class (fire/smoke/non-fire):
+  55.2% val accuracy (chance 33%). Report: `/library/datasets/flyc4/live/fire/report.json`.
+- **Satellite damage fly** — Etkin satellite tiles, 5-class post-wildfire
+  damage: **85.7% val accuracy** (chance 20%), 18,714 tiles through the frozen
+  circuit. Report: `/library/datasets/flyc4/live/fire_satellite/report.json`.
+
+Trainer: `flyc4/fire_satellite.py` (parquet shards → retina → circuit → decoder).
