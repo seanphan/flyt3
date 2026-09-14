@@ -87,6 +87,10 @@ extractor + tiny decoder, after jerryjliu/fly_ocr):
 Trainer: `flyc4/fire_satellite.py` (parquet shards → retina → circuit → decoder),
 sample tiles for the web: `flyc4/fire_samples.py`.
 
+The rigorous binary-classification version of this experiment — with rewired /
+random wiring controls, lesion ablations and CIs — now lives in
+**[PixelML/firefly](https://github.com/PixelML/firefly)** (demo: NodePort 30181).
+
 The web app has a **fire watch** mode (mode switch top-left, or `?mode=fire`):
 pick a dataset tile or upload one, the tile runs through the same frozen
 circuit, and the page shows the 5-class verdict, the live connectome wave, and
