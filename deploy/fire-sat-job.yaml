@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fly-fire-sat
+  namespace: flyc4
+  labels: { app: flyc4, tier: fire-sat }
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 14400
+  ttlSecondsAfterFinished: 7200
+  template:
+    metadata:
+      labels: { app: flyc4, tier: fire-sat }
+    spec:
+      nodeSelector: { kubernetes.io/hostname: k3s-w6 }
+      containers:
+        - name: fire-sat
+          image: flyc4:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "flyc4.fire_satellite",
+                    "--data-glob", "/library/datasets/fire_sat/etkin/*.parquet",
+                    "--epochs", "30",
+                    "--out", "/library/datasets/flyc4/live/fire_satellite"]
+          resources:
+            limits: { nvidia.com/gpu: "1", memory: 16Gi, cpu: "5" }
+          volumeMounts:
+            - { name: library, mountPath: /library }
+      volumes:
+        - name: library
+          hostPath: { path: /library }
+      restartPolicy: Never
