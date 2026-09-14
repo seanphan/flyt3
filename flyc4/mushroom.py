@@ -146,6 +146,7 @@ class MushroomQ:
         pn_kc = torch.as_tensor(np.asarray(circuit["pn_kc"]), dtype=torch.float32, device=self.device)
         kc_mbon = torch.as_tensor(np.asarray(circuit["kc_mbon"]), dtype=torch.float32, device=self.device)
         group = torch.as_tensor(np.asarray(circuit["group"]), dtype=torch.int64, device=self.device)
+        self.region = group
         self.n_pn, self.n_kc = pn_kc.shape
         self.n_mbon = kc_mbon.shape[1]
         has_in = pn_kc.sum(dim=0) > 0
@@ -302,9 +303,9 @@ class MushroomQ:
         self.w = torch.as_tensor(state["w"]).to(self.device)
         self.w0 = torch.as_tensor(state["w0"]).to(self.device)
         self.readout = torch.as_tensor(state["readout"]).to(self.device)
-        self.mbon_group = torch.as_tensor(state["group"]).to(self.device)
-        self.avoid = self.mbon_group == self.REWARD
-        self.approach = self.mbon_group == self.PUNISHMENT
+        self.region = torch.as_tensor(state["group"]).to(self.device)
+        self.avoid = self.region == self.REWARD
+        self.approach = self.region == self.PUNISHMENT
         self.pn_u = torch.as_tensor(state["pn_u"]).to(self.device)
         self.pn_action_mask = torch.as_tensor(state["pn_action_mask"]).to(self.device)
         self.pn_theta = torch.as_tensor(state["pn_theta"]).to(self.device)
